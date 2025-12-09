@@ -1,10 +1,11 @@
 # Health Companion Admin Panel
 
-A comprehensive, B2C + B2B healthcare management platform built with **Next.js 14**, featuring:
+A comprehensive, B2C + B2B healthcare management platform built with Next.js 14.  
+Includes:
 
-- **Super Admin Panel** for user, medical data, subscription, and company management.
-- **Company Portal** for business customers to manage their own employees.
-- **Public Medical Profile** for emergency/clinical access through QR code.
+- A **Super Admin Panel** to manage users, medical data, subscriptions, and companies.
+- A **Company Portal** where business customers manage their own employees.
+- A **Public Medical Profile** for emergency/clinical use via QR code.
 
 ---
 
@@ -30,123 +31,165 @@ A comprehensive, B2C + B2B healthcare management platform built with **Next.js 1
 
 ## Overview
 
-This project is an admin and B2B dashboard for the **Health Companion** mobile app. It allows:
+This project is an admin and B2B dashboard for the Health Companion mobile app. It allows:
 
-- Admins to manage patients, medical data, subscriptions.
+- Admins to manage patients, medical data, and subscriptions.
 - Companies (e.g., McDonald’s) to manage health accounts for their employees.
-- Doctors/first responders to view a patient’s **public, read-only medical profile** via QR code.
+- Doctors/first responders to view a patient’s critical medical data via a **public, read-only profile** accessed through a QR code.
 
-All UI is backed by mock data (`lib/mock-data.ts`) and can be connected to real APIs easily.
+The UI is built around mock data in `lib/mock-data.ts` but is structured so a backend developer can plug in real APIs with minimal effort.
 
 ---
 
 ## Features
 
-### Super Admin Panel
+### Super Admin Panel (`/dashboard`)
 
-#### `/dashboard`
+- **Dashboard Overview**
 
-- Dashboard stats:
-  - Users, active users
-  - Symptom chats
-  - Medicines & reminders
-  - Emergency SOS events
-- Users list with search
-- Click-through detail view
+  - Total users, active users
+  - Symptom chats, ongoing chats
+  - Medicines and active reminders
+  - Emergency SOS events in last 7 days
+  - Users list with search + click-through into detailed views
 
-#### User-Centric Pages
+- **User-Centric Views** (`/dashboard/[userId]`)
 
-- **Profile & Activity**
-- **Symptom Chats**
-- **Medicines**
-- **Medical Wallet**
-- **Medical History**
-- **Emergency Logs**
+  - Profile & contact info
+  - Health data summary cards
+  - Recent activity (chats, last active)
 
----
+- **Symptom Chats** (`/dashboard/[userId]/chats`)
+
+  - Per-user conversation list
+  - Expandable message threads (user vs assistant)
+  - Search + status filters (ongoing/completed/archived)
+
+- **Medicine Cabinet** (`/dashboard/[userId]/medicines`)
+
+  - Current medications
+  - Dosage / frequency / times / notes
+  - Reminder-enabled indicator
+
+- **Medical Wallet** (`/dashboard/[userId]/medical-wallet`)
+
+  - Emergency contacts (primary vs secondary)
+  - Insurance policies
+  - Doctors
+  - Pharmacies (preferred vs regular)
+  - Tabbed layout (Contacts / Insurance / Doctors / Pharmacies)
+
+- **Medical History** (`/dashboard/[userId]/medical-history`)
+
+  - Onboarding Q&A grouped by category (Conditions, Allergies, Lifestyle, etc.)
+  - Category chips with dynamic icons/colors
+  - Search across questions/answers
+  - Per-user breakdown
+
+- **Emergency SOS Logs** (`/dashboard/[userId]/emergency`)
+  - History of SOS events (911 vs emergency contact)
+  - Status: triggered / resolved / cancelled
+  - Type & location (if present)
+  - Filters by status and type
 
 ### B2C & B2B Subscriptions
 
-`/dashboard/subscriptions`
+- **Subscriptions Overview** (`/dashboard/subscriptions`)
+  - Monthly revenue, trial users, churn rate
+  - B2C subscriber table with plan & payment info
+  - B2B companies table with plan, user count, contract dates
+  - Plan catalog for both B2C (Free, Basic, Premium) and B2B (Starter, Professional, Enterprise, Unlimited)
 
-- Monthly revenue, trial users, churn rate
-- B2C subscribers & B2B companies tables
-- Plan catalog:
-  - B2C: Free, Basic, Premium
-  - B2B: Starter → Unlimited
+### B2B Company Management
 
----
+- **Companies List** (`/dashboard/companies`)
 
-### Company Management
+  - Search + status filters
+  - Company cards with:
+    - Plan name & user capacity
+    - Users used / max
+    - Contract end date
+  - “Add Company” dialog:
+    - Company info
+    - Billing contact
+    - Subscription plan
+    - Admin username/password (for Company Portal login)
 
-#### `/dashboard/companies`
+- **Company Detail** (`/dashboard/companies/[companyId]`)
 
-- Company list + filters
-- “Add Company” dialog:
-  - Billing contact
-  - Subscription plan
-  - Admin username/password
+  - Company info (contact, address, industry)
+  - Billing contact card
+  - Subscription details (plan, price, contract dates)
+  - User capacity bar
+  - Recent users
+  - **Admin Portal Access:**
+    - Portal URL `/company/[companyId]`
+    - Admin username
+    - Reset admin password dialog
+    - Open portal in new tab
 
-#### `/dashboard/companies/[companyId]`
+- **Company Users (Admin View)** (`/dashboard/companies/[companyId]/users`)
+  - List of all employees of that company
+  - Filters: search, role (admin/manager/employee), status (active/inactive/pending)
+  - Stats: counts per role/status
+  - “Add User” dialog to create employee accounts with username/password
+  - Actions:
+    - Edit user
+    - Reset password
+    - Activate / deactivate
+    - Delete (with confirmation)
 
-- Company info
-- Billing contact
-- Subscription & capacity usage
-- Recent users
-- Portal access: `/company/[companyId]`
+### Company Portal (B2B Client-Facing)
 
-#### `/dashboard/companies/[companyId]/users`
+- **Company Login** (`/company/login`)
 
-- Manage employees:
-  - Add/Edit/Delete users
-  - Reset password
-  - Activate/Deactivate
+  - Username / password
+  - Valid company admin usernames come from `mockCompanies.adminCredentials.username`
 
----
+- **Company Dashboard** (`/company/[companyId]`)
 
-### Company Portal
+  - Company-level stats (total users, active users, pending invites, inactive)
+  - Capacity bar (based on plan maxUsers)
+  - Quick actions: manage users, add user, view reports, settings
+  - Recent users
 
-#### `/company/login`
+- **Company User Management** (`/company/[companyId]/users`)
+  - Same concept as admin view but scoped to the single company
+  - Allows only creation and management of that company's employees
+  - “Add User” dialog, filters, reset password, etc.
 
-- Username + password
-- Uses `mockCompanies.adminCredentials.username`
+### Public Medical Profile (Emergency)
 
-#### `/company/[companyId]`
-
-- Stats, capacity bar
-- Recent users
-- Quick actions
-
----
-
-### Public Medical Profile
-
-#### `/medical-profile/[userId]`
-
-- No auth required
-- For emergency responders
-- Highlights:
-  - Identity
-  - Emergency contacts
-  - Allergies & conditions
-  - Medications
-  - Insurance, doctors, pharmacies
-  - Medical history Q&A
-- **Download PDF** using `jsPDF`
+- **Public Profile** (`/medical-profile/[userId]`)
+  - No authentication required
+  - For doctors/emergency responders
+  - Sections:
+    - Patient identity (name, DOB, blood type, height/weight)
+    - **Emergency Contacts** (primary highlighted + tap-to-call)
+    - Allergies & conditions (highlighted, color-coded)
+    - Medications (name, dosage, frequency, times, notes)
+    - Insurance
+    - Doctors
+    - Pharmacies
+    - Medical History Q&A
+  - **Download PDF**:
+    - Generates a clean, A4 PDF with:
+      - Header, sections, and color-coded boxes
+      - Emergency contacts, allergies, conditions, medications, providers
+      - Footer with URL and last update date
+    - Implemented with `jspdf` client-side
 
 ---
 
 ## Tech Stack
 
-| Category      | Technology    |
-| ------------- | ------------- |
-| Framework     | Next.js 14    |
-| Language      | TypeScript    |
-| Styling       | Tailwind CSS  |
-| UI Components | shadcn/ui     |
-| Animations    | Framer Motion |
-| PDF           | jsPDF         |
-| Icons         | Lucide React  |
+- **Framework:** Next.js 14 (App Router)
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS
+- **UI Components:** shadcn/ui
+- **Animations:** Framer Motion
+- **PDF:** jsPDF
+- **Icons:** Lucide React
 
 ---
 
@@ -154,211 +197,48 @@ All UI is backed by mock data (`lib/mock-data.ts`) and can be connected to real 
 
 ```bash
 app/
-├── page.tsx
-├── dashboard/
-│   ├── page.tsx
+├── page.tsx                      # Super Admin login
+├── layout.tsx                    # Root layout
+├── dashboard/                    # Super Admin Panel
+│   ├── layout.tsx                # Dashboard layout (Sidebar + main)
+│   ├── page.tsx                  # Dashboard overview (stats + users list)
 │   ├── subscriptions/
+│   │   └── page.tsx              # B2C/B2B subscriptions overview
 │   ├── companies/
+│   │   ├── page.tsx              # Companies list
+│   │   └── [companyId]/
+│   │       ├── page.tsx          # Company detail (admin-side)
+│   │       └── users/
+│   │           └── page.tsx      # Company users (admin-side)
 │   └── [userId]/
-├── company/
+│       ├── page.tsx              # User overview
+│       ├── chats/
+│       │   └── page.tsx
+│       ├── medicines/
+│       │   └── page.tsx
+│       ├── medical-wallet/
+│       │   └── page.tsx
+│       ├── medical-history/
+│       │   └── page.tsx
+│       └── emergency/
+│           └── page.tsx
+├── company/                      # Company Portal
 │   ├── login/
+│   │   └── page.tsx              # Company login
 │   └── [companyId]/
+│       ├── page.tsx              # Company dashboard
+│       └── users/
+│           └── page.tsx          # Company-manage users
 └── medical-profile/
+    └── [userId]/
+        └── page.tsx              # Public medical profile (PDF)
 components/
+├── layout/
+│   ├── DashboardLayout.tsx       # Wraps all /dashboard routes
+│   ├── Sidebar.tsx               # Context-aware sidebar (admin + user view)
+│   └── ThemeToggle.tsx
+└── ui/                           # shadcn components (button, card, table, etc.)
 lib/
+├── mock-data.ts                  # All mock data & interfaces
+└── utils.ts                      # Helpers: cn, date formatting, relative time
 ```
-
----
-
-## Data Model Overview
-
-All typings & mock data live in `lib/mock-data.ts`.
-
-### Key Interfaces
-
-- `User`
-- `PersonalInfo`
-- `Chat`, `ChatMessage`
-- `Medicine`
-- `EmergencyContact`, `Insurance`, `Doctor`, `Pharmacy`
-- `MedicalHistoryItem`
-- `EmergencySOSLog`
-- `SubscriptionPlan`
-- `Company`, `CompanyUser`
-
-### Helpers
-
-- `getDashboardStats()`
-- `getSubscriptionStats()`
-- `getCompanyUsers(companyId)`
-- `getCompanyById(companyId)`
-- `getPersonalInfoWithDefaults(userId)`
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- npm / pnpm / yarn
-
-### Install Dependencies
-
-```bash
-npm install
-```
-
-### Run Locally
-
-```bash
-npm run dev
-```
-
-Visit:
-
-- Admin Panel: `http://localhost:3000`
-- Company Login: `http://localhost:3000/company/login`
-- Public Profile Example: `http://localhost:3000/medical-profile/usr_001`
-
----
-
-## Environment Variables
-
-Create `.env.local`:
-
-```bash
-NEXT_PUBLIC_APP_NAME="Health Companion Admin"
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
-
-NEXT_PUBLIC_API_URL="http://localhost:8000/api"
-
-NEXT_PUBLIC_ENABLE_PDF_DOWNLOAD="true"
-NEXT_PUBLIC_ENABLE_B2B_FEATURES="true"
-```
-
----
-
-## Key Screens
-
-1. `/` – Super admin login
-2. `/dashboard` – Overview
-3. `/dashboard/[userId]` – User profile
-4. `/dashboard/subscriptions` – B2C/B2B plans
-5. `/dashboard/companies` – Company list
-6. `/dashboard/companies/[companyId]` – Company details
-7. `/dashboard/companies/[companyId]/users` – Admin user management
-8. `/company/login` – Company login
-9. `/company/[companyId]` – Company dashboard
-10. `/company/[companyId]/users` – Company user management
-11. `/medical-profile/[userId]` – Public profile + PDF
-
----
-
-## Backend Integration Guide
-
-Replace `mock-data` usage with API calls.
-
-### Recommended API Structure
-
-| Method | Endpoint              | Purpose        |
-| ------ | --------------------- | -------------- |
-| POST   | `/auth/admin/login`   | Admin login    |
-| POST   | `/auth/company/login` | Company login  |
-| GET    | `/users`              | List users     |
-| GET    | `/users/:userId`      | User detail    |
-| GET    | `/companies`          | List companies |
-| POST   | `/companies`          | Create company |
-| GET    | `/stats/dashboard`    | App stats      |
-| GET    | `/public/profile/:id` | Public profile |
-
-### Example Public Profile Response
-
-```json
-{
-  "user": { "id": "usr_001", "name": "John Smith" },
-  "personalInfo": { "bloodType": "O+" },
-  "medicines": [],
-  "emergencyContacts": []
-}
-```
-
----
-
-## Security Considerations
-
-### Admin Panel
-
-- JWT + HttpOnly cookies
-- Role-based access
-
-### Company Portal
-
-- Scoped auth per `companyId`
-
-### Public Profile
-
-- No auth, but:
-  - Use UUID/non-guessable IDs
-  - Rate limit
-  - Allow user to enable/disable link
-
-### Data Privacy
-
-- Never expose password hashes
-- Return minimum required health data
-
----
-
-## Scripts
-
-```bash
-npm run dev
-npm run build
-npm start
-npm run lint
-```
-
----
-
-## Deployment
-
-### Vercel (Recommended)
-
-- Push to GitHub
-- Import into Vercel
-- Setup env variables
-- Deploy
-
-### Docker
-
-```bash
-docker build -t health-companion-admin .
-docker run -p 3000:3000   -e NEXT_PUBLIC_APP_URL="https://your-domain.com"   health-companion-admin
-```
-
----
-
-## Contributing
-
-1. Fork repo
-2. Create feature branch:
-
-   ```bash
-   git checkout -b feature/your-feature
-   ```
-
-3. Commit & push:
-
-   ```bash
-   git commit -m "Add your feature"
-   git push origin feature/your-feature
-   ```
-
-4. Open PR
-
----
-
-## License
-
-This project is licensed under the **MIT License**.
