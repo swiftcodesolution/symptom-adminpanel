@@ -119,6 +119,89 @@ export interface EmergencySOSLog {
   status: "triggered" | "resolved" | "cancelled";
 }
 
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  type: "b2b" | "b2c";
+  price: number;
+  billingCycle: "monthly" | "yearly";
+  features: string[];
+  maxUsers?: number; // For B2B plans
+  isActive: boolean;
+}
+
+export interface B2CSubscription {
+  id: string;
+  odId: string;
+  userName: string;
+  planId: string;
+  planName: string;
+  status: "active" | "cancelled" | "expired" | "trial";
+  startDate: string;
+  endDate: string;
+  autoRenew: boolean;
+  paymentMethod?: string;
+  amount: number;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  industry: string;
+  logo?: string;
+  subscriptionId: string;
+  planId: string;
+  planName: string;
+  maxUsers: number;
+  currentUsers: number;
+  status: "active" | "suspended" | "pending" | "cancelled";
+  contractStartDate: string;
+  contractEndDate: string;
+  billingContact: {
+    name: string;
+    email: string;
+    phone: string;
+  };
+  adminCredentials: {
+    username: string;
+    passwordHash: string; // In real app, never expose this
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CompanyUser {
+  id: string;
+  companyId: string;
+  companyName: string;
+  employeeId?: string;
+  username: string;
+  passwordHash: string; // In real app, never expose this
+  name: string;
+  email: string;
+  phone: string;
+  department?: string;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "inactive" | "pending";
+  createdAt: string;
+  lastLogin?: string;
+  createdBy: string;
+}
+
+export interface SubscriptionStats {
+  totalB2CSubscriptions: number;
+  activeB2CSubscriptions: number;
+  totalCompanies: number;
+  activeCompanies: number;
+  totalRevenue: number;
+  monthlyRevenue: number;
+  trialUsers: number;
+  churnRate: number;
+}
+
 // Mock Users
 export const mockUsers: User[] = [
   {
@@ -942,3 +1025,594 @@ export const getDashboardStats = () => ({
     return logDate > weekAgo;
   }).length,
 });
+
+// ============================================
+// MOCK SUBSCRIPTION PLANS
+// ============================================
+
+export const mockSubscriptionPlans: SubscriptionPlan[] = [
+  // B2C Plans
+  {
+    id: "plan_b2c_free",
+    name: "Free",
+    type: "b2c",
+    price: 0,
+    billingCycle: "monthly",
+    features: [
+      "Basic symptom checker",
+      "Up to 3 medicines tracking",
+      "1 emergency contact",
+    ],
+    isActive: true,
+  },
+  {
+    id: "plan_b2c_basic",
+    name: "Basic",
+    type: "b2c",
+    price: 4.99,
+    billingCycle: "monthly",
+    features: [
+      "Unlimited symptom chats",
+      "Up to 10 medicines tracking",
+      "3 emergency contacts",
+      "Medical history storage",
+      "Email support",
+    ],
+    isActive: true,
+  },
+  {
+    id: "plan_b2c_premium",
+    name: "Premium",
+    type: "b2c",
+    price: 9.99,
+    billingCycle: "monthly",
+    features: [
+      "Everything in Basic",
+      "Unlimited medicines tracking",
+      "Unlimited emergency contacts",
+      "Insurance & doctor management",
+      "PDF reports",
+      "Priority support",
+      "Family sharing (up to 5)",
+    ],
+    isActive: true,
+  },
+  {
+    id: "plan_b2c_premium_yearly",
+    name: "Premium Yearly",
+    type: "b2c",
+    price: 99.99,
+    billingCycle: "yearly",
+    features: [
+      "Everything in Premium",
+      "2 months free",
+      "Early access to features",
+    ],
+    isActive: true,
+  },
+  // B2B Plans
+  {
+    id: "plan_b2b_starter",
+    name: "Business Starter",
+    type: "b2b",
+    price: 99,
+    billingCycle: "monthly",
+    maxUsers: 25,
+    features: [
+      "Up to 25 employees",
+      "Admin dashboard",
+      "Employee health tracking",
+      "Basic analytics",
+      "Email support",
+    ],
+    isActive: true,
+  },
+  {
+    id: "plan_b2b_professional",
+    name: "Business Professional",
+    type: "b2b",
+    price: 249,
+    billingCycle: "monthly",
+    maxUsers: 100,
+    features: [
+      "Up to 100 employees",
+      "Advanced admin dashboard",
+      "Department management",
+      "Health analytics & reports",
+      "API access",
+      "Phone support",
+    ],
+    isActive: true,
+  },
+  {
+    id: "plan_b2b_enterprise",
+    name: "Enterprise",
+    type: "b2b",
+    price: 499,
+    billingCycle: "monthly",
+    maxUsers: 500,
+    features: [
+      "Up to 500 employees",
+      "Custom branding",
+      "SSO integration",
+      "Advanced analytics",
+      "Dedicated account manager",
+      "24/7 priority support",
+      "Custom integrations",
+    ],
+    isActive: true,
+  },
+  {
+    id: "plan_b2b_unlimited",
+    name: "Enterprise Unlimited",
+    type: "b2b",
+    price: 999,
+    billingCycle: "monthly",
+    maxUsers: -1, // Unlimited
+    features: [
+      "Unlimited employees",
+      "All Enterprise features",
+      "On-premise deployment option",
+      "Custom SLA",
+      "Quarterly business reviews",
+    ],
+    isActive: true,
+  },
+];
+
+// ============================================
+// MOCK B2C SUBSCRIPTIONS
+// ============================================
+
+export const mockB2CSubscriptions: B2CSubscription[] = [
+  {
+    id: "sub_001",
+    odId: "usr_001",
+    userName: "John Smith",
+    planId: "plan_b2c_premium",
+    planName: "Premium",
+    status: "active",
+    startDate: "2024-01-15",
+    endDate: "2025-01-15",
+    autoRenew: true,
+    paymentMethod: "Visa •••• 4242",
+    amount: 9.99,
+  },
+  {
+    id: "sub_002",
+    odId: "usr_002",
+    userName: "Sarah Johnson",
+    planId: "plan_b2c_basic",
+    planName: "Basic",
+    status: "active",
+    startDate: "2024-02-20",
+    endDate: "2025-02-20",
+    autoRenew: true,
+    paymentMethod: "Mastercard •••• 5555",
+    amount: 4.99,
+  },
+  {
+    id: "sub_003",
+    odId: "usr_003",
+    userName: "Michael Chen",
+    planId: "plan_b2c_premium_yearly",
+    planName: "Premium Yearly",
+    status: "active",
+    startDate: "2024-03-10",
+    endDate: "2025-03-10",
+    autoRenew: true,
+    paymentMethod: "Visa •••• 1234",
+    amount: 99.99,
+  },
+  {
+    id: "sub_004",
+    odId: "usr_004",
+    userName: "Emily Davis",
+    planId: "plan_b2c_free",
+    planName: "Free",
+    status: "active",
+    startDate: "2024-04-05",
+    endDate: "2099-12-31",
+    autoRenew: false,
+    amount: 0,
+  },
+  {
+    id: "sub_005",
+    odId: "usr_005",
+    userName: "Robert Wilson",
+    planId: "plan_b2c_basic",
+    planName: "Basic",
+    status: "cancelled",
+    startDate: "2024-05-22",
+    endDate: "2024-11-22",
+    autoRenew: false,
+    paymentMethod: "PayPal",
+    amount: 4.99,
+  },
+  {
+    id: "sub_006",
+    odId: "usr_006",
+    userName: "Lisa Anderson",
+    planId: "plan_b2c_premium",
+    planName: "Premium",
+    status: "active",
+    startDate: "2024-06-18",
+    endDate: "2025-06-18",
+    autoRenew: true,
+    paymentMethod: "Visa •••• 9999",
+    amount: 9.99,
+  },
+  {
+    id: "sub_007",
+    odId: "usr_007",
+    userName: "David Brown",
+    planId: "plan_b2c_free",
+    planName: "Free",
+    status: "expired",
+    startDate: "2024-07-30",
+    endDate: "2024-10-30",
+    autoRenew: false,
+    amount: 0,
+  },
+  {
+    id: "sub_008",
+    odId: "usr_008",
+    userName: "Jennifer Martinez",
+    planId: "plan_b2c_basic",
+    planName: "Basic",
+    status: "trial",
+    startDate: "2024-12-01",
+    endDate: "2024-12-31",
+    autoRenew: false,
+    amount: 0,
+  },
+];
+
+// ============================================
+// MOCK COMPANIES (B2B)
+// ============================================
+
+export const mockCompanies: Company[] = [
+  {
+    id: "comp_001",
+    name: "McDonald's Corporation",
+    email: "health@mcdonalds.com",
+    phone: "+1 (800) 244-6227",
+    address: "110 N Carpenter St, Chicago, IL 60607",
+    industry: "Food & Beverage",
+    subscriptionId: "sub_b2b_001",
+    planId: "plan_b2b_enterprise",
+    planName: "Enterprise",
+    maxUsers: 500,
+    currentUsers: 342,
+    status: "active",
+    contractStartDate: "2024-01-01",
+    contractEndDate: "2025-12-31",
+    billingContact: {
+      name: "Sarah Mitchell",
+      email: "s.mitchell@mcdonalds.com",
+      phone: "+1 (312) 555-0101",
+    },
+    adminCredentials: {
+      username: "mcdonalds_admin",
+      passwordHash: "hashed_password_here",
+    },
+    createdAt: "2024-01-01T00:00:00Z",
+    updatedAt: "2024-12-15T10:30:00Z",
+  },
+  {
+    id: "comp_002",
+    name: "Walmart Inc.",
+    email: "wellness@walmart.com",
+    phone: "+1 (800) 925-6278",
+    address: "702 SW 8th Street, Bentonville, AR 72716",
+    industry: "Retail",
+    subscriptionId: "sub_b2b_002",
+    planId: "plan_b2b_unlimited",
+    planName: "Enterprise Unlimited",
+    maxUsers: -1,
+    currentUsers: 1250,
+    status: "active",
+    contractStartDate: "2024-02-15",
+    contractEndDate: "2026-02-15",
+    billingContact: {
+      name: "John Peterson",
+      email: "j.peterson@walmart.com",
+      phone: "+1 (479) 555-0202",
+    },
+    adminCredentials: {
+      username: "walmart_admin",
+      passwordHash: "hashed_password_here",
+    },
+    createdAt: "2024-02-15T00:00:00Z",
+    updatedAt: "2024-12-18T14:20:00Z",
+  },
+  {
+    id: "comp_003",
+    name: "TechStart Solutions",
+    email: "hr@techstart.io",
+    phone: "+1 (415) 555-0303",
+    address: "500 Terry A Francois Blvd, San Francisco, CA 94158",
+    industry: "Technology",
+    subscriptionId: "sub_b2b_003",
+    planId: "plan_b2b_starter",
+    planName: "Business Starter",
+    maxUsers: 25,
+    currentUsers: 18,
+    status: "active",
+    contractStartDate: "2024-06-01",
+    contractEndDate: "2025-06-01",
+    billingContact: {
+      name: "Emily Chen",
+      email: "emily@techstart.io",
+      phone: "+1 (415) 555-0304",
+    },
+    adminCredentials: {
+      username: "techstart_admin",
+      passwordHash: "hashed_password_here",
+    },
+    createdAt: "2024-06-01T00:00:00Z",
+    updatedAt: "2024-12-10T09:15:00Z",
+  },
+  {
+    id: "comp_004",
+    name: "City General Hospital",
+    email: "staff@citygeneral.org",
+    phone: "+1 (555) 444-0404",
+    address: "123 Medical Center Dr, New York, NY 10001",
+    industry: "Healthcare",
+    subscriptionId: "sub_b2b_004",
+    planId: "plan_b2b_professional",
+    planName: "Business Professional",
+    maxUsers: 100,
+    currentUsers: 87,
+    status: "active",
+    contractStartDate: "2024-03-15",
+    contractEndDate: "2025-03-15",
+    billingContact: {
+      name: "Dr. Robert Adams",
+      email: "r.adams@citygeneral.org",
+      phone: "+1 (555) 444-0405",
+    },
+    adminCredentials: {
+      username: "citygeneral_admin",
+      passwordHash: "hashed_password_here",
+    },
+    createdAt: "2024-03-15T00:00:00Z",
+    updatedAt: "2024-12-19T16:45:00Z",
+  },
+  {
+    id: "comp_005",
+    name: "Global Finance Corp",
+    email: "wellness@globalfinance.com",
+    phone: "+1 (212) 555-0505",
+    address: "1 Wall Street, New York, NY 10005",
+    industry: "Finance",
+    subscriptionId: "sub_b2b_005",
+    planId: "plan_b2b_enterprise",
+    planName: "Enterprise",
+    maxUsers: 500,
+    currentUsers: 156,
+    status: "suspended",
+    contractStartDate: "2024-04-01",
+    contractEndDate: "2025-04-01",
+    billingContact: {
+      name: "Michael Roberts",
+      email: "m.roberts@globalfinance.com",
+      phone: "+1 (212) 555-0506",
+    },
+    adminCredentials: {
+      username: "globalfinance_admin",
+      passwordHash: "hashed_password_here",
+    },
+    createdAt: "2024-04-01T00:00:00Z",
+    updatedAt: "2024-11-20T11:30:00Z",
+  },
+  {
+    id: "comp_006",
+    name: "Green Energy Ltd",
+    email: "people@greenenergy.co",
+    phone: "+1 (303) 555-0606",
+    address: "789 Sustainable Way, Denver, CO 80202",
+    industry: "Energy",
+    subscriptionId: "sub_b2b_006",
+    planId: "plan_b2b_professional",
+    planName: "Business Professional",
+    maxUsers: 100,
+    currentUsers: 45,
+    status: "pending",
+    contractStartDate: "2024-12-01",
+    contractEndDate: "2025-12-01",
+    billingContact: {
+      name: "Lisa Green",
+      email: "l.green@greenenergy.co",
+      phone: "+1 (303) 555-0607",
+    },
+    adminCredentials: {
+      username: "greenenergy_admin",
+      passwordHash: "hashed_password_here",
+    },
+    createdAt: "2024-12-01T00:00:00Z",
+    updatedAt: "2024-12-01T00:00:00Z",
+  },
+];
+
+// ============================================
+// MOCK COMPANY USERS
+// ============================================
+
+export const mockCompanyUsers: CompanyUser[] = [
+  // McDonald's Users
+  {
+    id: "cu_001",
+    companyId: "comp_001",
+    companyName: "McDonald's Corporation",
+    employeeId: "MCD-001",
+    username: "jsmith_mcd",
+    passwordHash: "hashed",
+    name: "James Smith",
+    email: "j.smith@mcdonalds.com",
+    phone: "+1 (312) 555-1001",
+    department: "Operations",
+    role: "manager",
+    status: "active",
+    createdAt: "2024-01-15T10:00:00Z",
+    lastLogin: "2024-12-19T08:30:00Z",
+    createdBy: "admin",
+  },
+  {
+    id: "cu_002",
+    companyId: "comp_001",
+    companyName: "McDonald's Corporation",
+    employeeId: "MCD-002",
+    username: "mjohnson_mcd",
+    passwordHash: "hashed",
+    name: "Maria Johnson",
+    email: "m.johnson@mcdonalds.com",
+    phone: "+1 (312) 555-1002",
+    department: "HR",
+    role: "admin",
+    status: "active",
+    createdAt: "2024-01-15T10:00:00Z",
+    lastLogin: "2024-12-19T09:15:00Z",
+    createdBy: "admin",
+  },
+  {
+    id: "cu_003",
+    companyId: "comp_001",
+    companyName: "McDonald's Corporation",
+    employeeId: "MCD-003",
+    username: "dwilliams_mcd",
+    passwordHash: "hashed",
+    name: "David Williams",
+    email: "d.williams@mcdonalds.com",
+    phone: "+1 (312) 555-1003",
+    department: "Kitchen",
+    role: "employee",
+    status: "active",
+    createdAt: "2024-02-01T09:00:00Z",
+    lastLogin: "2024-12-18T14:20:00Z",
+    createdBy: "mjohnson_mcd",
+  },
+  {
+    id: "cu_004",
+    companyId: "comp_001",
+    companyName: "McDonald's Corporation",
+    employeeId: "MCD-004",
+    username: "sbrown_mcd",
+    passwordHash: "hashed",
+    name: "Susan Brown",
+    email: "s.brown@mcdonalds.com",
+    phone: "+1 (312) 555-1004",
+    department: "Customer Service",
+    role: "employee",
+    status: "inactive",
+    createdAt: "2024-02-15T11:00:00Z",
+    lastLogin: "2024-10-01T10:00:00Z",
+    createdBy: "mjohnson_mcd",
+  },
+  // Walmart Users
+  {
+    id: "cu_005",
+    companyId: "comp_002",
+    companyName: "Walmart Inc.",
+    employeeId: "WMT-001",
+    username: "rjones_wmt",
+    passwordHash: "hashed",
+    name: "Robert Jones",
+    email: "r.jones@walmart.com",
+    phone: "+1 (479) 555-2001",
+    department: "Store Operations",
+    role: "admin",
+    status: "active",
+    createdAt: "2024-02-20T08:00:00Z",
+    lastLogin: "2024-12-19T07:45:00Z",
+    createdBy: "admin",
+  },
+  {
+    id: "cu_006",
+    companyId: "comp_002",
+    companyName: "Walmart Inc.",
+    employeeId: "WMT-002",
+    username: "agarcia_wmt",
+    passwordHash: "hashed",
+    name: "Ana Garcia",
+    email: "a.garcia@walmart.com",
+    phone: "+1 (479) 555-2002",
+    department: "Pharmacy",
+    role: "manager",
+    status: "active",
+    createdAt: "2024-03-01T09:00:00Z",
+    lastLogin: "2024-12-19T11:30:00Z",
+    createdBy: "rjones_wmt",
+  },
+  // TechStart Users
+  {
+    id: "cu_007",
+    companyId: "comp_003",
+    companyName: "TechStart Solutions",
+    employeeId: "TS-001",
+    username: "klee_ts",
+    passwordHash: "hashed",
+    name: "Kevin Lee",
+    email: "k.lee@techstart.io",
+    phone: "+1 (415) 555-3001",
+    department: "Engineering",
+    role: "admin",
+    status: "active",
+    createdAt: "2024-06-05T10:00:00Z",
+    lastLogin: "2024-12-19T10:00:00Z",
+    createdBy: "admin",
+  },
+  {
+    id: "cu_008",
+    companyId: "comp_003",
+    companyName: "TechStart Solutions",
+    employeeId: "TS-002",
+    username: "jpark_ts",
+    passwordHash: "hashed",
+    name: "Jennifer Park",
+    email: "j.park@techstart.io",
+    phone: "+1 (415) 555-3002",
+    department: "Design",
+    role: "employee",
+    status: "active",
+    createdAt: "2024-06-10T09:00:00Z",
+    lastLogin: "2024-12-18T16:45:00Z",
+    createdBy: "klee_ts",
+  },
+  {
+    id: "cu_009",
+    companyId: "comp_003",
+    companyName: "TechStart Solutions",
+    employeeId: "TS-003",
+    username: "mkim_ts",
+    passwordHash: "hashed",
+    name: "Michael Kim",
+    email: "m.kim@techstart.io",
+    phone: "+1 (415) 555-3003",
+    department: "Engineering",
+    role: "employee",
+    status: "pending",
+    createdAt: "2024-12-15T14:00:00Z",
+    createdBy: "klee_ts",
+  },
+  // City General Hospital Users
+  {
+    id: "cu_010",
+    companyId: "comp_004",
+    companyName: "City General Hospital",
+    employeeId: "CGH-001",
+    username: "drwilson_cgh",
+    passwordHash: "hashed",
+    name: "Dr. Sarah Wilson",
+    email: "s.wilson@citygeneral.org",
+    phone: "+1 (555) 444-4001",
+    department: "Emergency",
+    role: "admin",
+    status: "active",
+    createdAt: "2024-03-20T08:00:00Z",
+    lastLogin: "2024-12-19T06:30:00Z",
+    createdBy: "admin",
+  },
+];

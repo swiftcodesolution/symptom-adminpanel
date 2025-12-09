@@ -1,233 +1,364 @@
 # Health Companion Admin Panel
 
-A modern, responsive admin dashboard for managing the Health Companion mobile application. Built with Next.js 14+, TypeScript, Tailwind CSS, and shadcn/ui components.
+A comprehensive, B2C + B2B healthcare management platform built with **Next.js 14**, featuring:
 
-![Health Companion Admin](https://img.shields.io/badge/Next.js-14+-black?style=flat-square&logo=next.js)
-![TypeScript](https://img.shields.io/badge/TypeScript-5+-blue?style=flat-square&logo=typescript)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind-3+-38B2AC?style=flat-square&logo=tailwind-css)
-![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+- **Super Admin Panel** for user, medical data, subscription, and company management.
+- **Company Portal** for business customers to manage their own employees.
+- **Public Medical Profile** for emergency/clinical access through QR code.
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
-- [Getting Started](#getting-started)
 - [Project Structure](#project-structure)
-- [Pages & Routes](#pages--routes)
-- [Mock Data](#mock-data)
-- [Backend Integration Guide](#backend-integration-guide)
-- [API Endpoints Reference](#api-endpoints-reference)
+- [Data Model Overview](#data-model-overview)
+- [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
+- [Key Screens](#key-screens)
+- [Backend Integration Guide](#backend-integration-guide)
+- [API Contracts](#api-contracts)
+- [Security Considerations](#security-considerations)
+- [Scripts](#scripts)
 - [Deployment](#deployment)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
 ## Overview
 
-Health Companion Admin Panel is a web-based dashboard that allows administrators to:
+This project is an admin and B2B dashboard for the **Health Companion** mobile app. It allows:
 
-- View and manage app users
-- Monitor symptom checker chat conversations
-- Track user medications and reminders
-- Access medical wallet data (emergency contacts, insurance, doctors, pharmacies)
-- Review medical history questionnaire responses
-- Monitor emergency SOS events
+- Admins to manage patients, medical data, subscriptions.
+- Companies (e.g., McDonald’s) to manage health accounts for their employees.
+- Doctors/first responders to view a patient’s **public, read-only medical profile** via QR code.
 
-Additionally, the platform provides a **public medical profile page** that can be accessed via QR code scanning, allowing healthcare providers to quickly access a patient's critical medical information.
+All UI is backed by mock data (`lib/mock-data.ts`) and can be connected to real APIs easily.
 
 ---
 
 ## Features
 
-### 🏠 Dashboard
-- Application statistics overview
-- User grid with search functionality
-- Quick access to individual user profiles
+### Super Admin Panel
 
-### 👤 User Management
-- User profile with contact information
-- Health data summary cards
-- Navigation to user-specific data sections
+#### `/dashboard`
 
-### 💬 Symptom Chats
-- View AI health assistant conversations
-- Expandable message threads
-- Filter by status (ongoing, completed, archived)
+- Dashboard stats:
+  - Users, active users
+  - Symptom chats
+  - Medicines & reminders
+  - Emergency SOS events
+- Users list with search
+- Click-through detail view
 
-### 💊 Medicine Cabinet
-- Current medications list
-- Dosage and frequency tracking
-- Reminder status indicators
+#### User-Centric Pages
 
-### 🏥 Medical Wallet
-- Emergency contacts with primary designation
-- Insurance information with policy details
-- Healthcare providers (doctors)
-- Preferred pharmacies
+- **Profile & Activity**
+- **Symptom Chats**
+- **Medicines**
+- **Medical Wallet**
+- **Medical History**
+- **Emergency Logs**
 
-### 📋 Medical History
-- Onboarding questionnaire responses
-- Categorized health records
-- Searchable and filterable
+---
 
-### 🚨 Emergency SOS Logs
-- Emergency event history
-- 911 calls and emergency contact alerts
-- Status tracking (triggered, resolved, cancelled)
+### B2C & B2B Subscriptions
 
-### 📄 Public Medical Profile
-- QR code accessible public page
-- Complete medical information for healthcare providers
-- PDF download functionality
-- Share via native share API
+`/dashboard/subscriptions`
+
+- Monthly revenue, trial users, churn rate
+- B2C subscribers & B2B companies tables
+- Plan catalog:
+  - B2C: Free, Basic, Premium
+  - B2B: Starter → Unlimited
+
+---
+
+### Company Management
+
+#### `/dashboard/companies`
+
+- Company list + filters
+- “Add Company” dialog:
+  - Billing contact
+  - Subscription plan
+  - Admin username/password
+
+#### `/dashboard/companies/[companyId]`
+
+- Company info
+- Billing contact
+- Subscription & capacity usage
+- Recent users
+- Portal access: `/company/[companyId]`
+
+#### `/dashboard/companies/[companyId]/users`
+
+- Manage employees:
+  - Add/Edit/Delete users
+  - Reset password
+  - Activate/Deactivate
+
+---
+
+### Company Portal
+
+#### `/company/login`
+
+- Username + password
+- Uses `mockCompanies.adminCredentials.username`
+
+#### `/company/[companyId]`
+
+- Stats, capacity bar
+- Recent users
+- Quick actions
+
+---
+
+### Public Medical Profile
+
+#### `/medical-profile/[userId]`
+
+- No auth required
+- For emergency responders
+- Highlights:
+  - Identity
+  - Emergency contacts
+  - Allergies & conditions
+  - Medications
+  - Insurance, doctors, pharmacies
+  - Medical history Q&A
+- **Download PDF** using `jsPDF`
 
 ---
 
 ## Tech Stack
 
-| Category | Technology |
-|----------|------------|
-| Framework | Next.js 14+ (App Router) |
-| Language | TypeScript |
-| Styling | Tailwind CSS |
-| UI Components | shadcn/ui |
-| Animations | Framer Motion |
-| PDF Generation | jsPDF |
-| Icons | Lucide React |
-| State Management | React Hooks |
+| Category      | Technology    |
+| ------------- | ------------- |
+| Framework     | Next.js 14    |
+| Language      | TypeScript    |
+| Styling       | Tailwind CSS  |
+| UI Components | shadcn/ui     |
+| Animations    | Framer Motion |
+| PDF           | jsPDF         |
+| Icons         | Lucide React  |
+
+---
+
+## Project Structure
+
+```bash
+app/
+├── page.tsx
+├── dashboard/
+│   ├── page.tsx
+│   ├── subscriptions/
+│   ├── companies/
+│   └── [userId]/
+├── company/
+│   ├── login/
+│   └── [companyId]/
+└── medical-profile/
+components/
+lib/
+```
+
+---
+
+## Data Model Overview
+
+All typings & mock data live in `lib/mock-data.ts`.
+
+### Key Interfaces
+
+- `User`
+- `PersonalInfo`
+- `Chat`, `ChatMessage`
+- `Medicine`
+- `EmergencyContact`, `Insurance`, `Doctor`, `Pharmacy`
+- `MedicalHistoryItem`
+- `EmergencySOSLog`
+- `SubscriptionPlan`
+- `Company`, `CompanyUser`
+
+### Helpers
+
+- `getDashboardStats()`
+- `getSubscriptionStats()`
+- `getCompanyUsers(companyId)`
+- `getCompanyById(companyId)`
+- `getPersonalInfoWithDefaults(userId)`
 
 ---
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+ 
+
+- Node.js 18+
 - npm / pnpm / yarn
 
-### Installation
+### Install Dependencies
 
 ```bash
-git clone https://github.com/your-org/health-companion-admin.git
-cd health-companion-admin
 npm install
 ```
 
-Install required packages:
-
-```bash
-npm install jspdf framer-motion
-npm install @radix-ui/react-collapsible
-```
-
-Setup environment variables:
-
-```bash
-cp .env.example .env.local
-```
-
-Start development server:
+### Run Locally
 
 ```bash
 npm run dev
 ```
 
-Production build:
+Visit:
 
-```bash
-npm run build
-npm start
-```
-
----
-
-## Project Structure
-
-```
-health-companion-admin/
-├── app/
-│   ├── page.tsx
-│   ├── layout.tsx
-│   ├── dashboard/
-│   │   ├── page.tsx
-│   │   └── [userId]/...
-│   └── medical-profile/[userId]/page.tsx
-├── components/
-│   ├── layout/
-│   └── ui/
-├── lib/
-│   ├── mock-data.ts
-│   └── utils.ts
-└── package.json
-```
-
----
-
-## Pages & Routes
-
-| Route | Description | Auth |
-|-------|-------------|------|
-| / | Login Page | No |
-| /dashboard | User grid | Yes |
-| /dashboard/[userId] | Overview | Yes |
-| /dashboard/[userId]/chats | Chats | Yes |
-| /dashboard/[userId]/medicines | Medicines | Yes |
-| /dashboard/[userId]/medical-wallet | Wallet | Yes |
-| /dashboard/[userId]/medical-history | History | Yes |
-| /dashboard/[userId]/emergency | SOS logs | Yes |
-| /medical-profile/[userId] | Public profile | No |
-
----
-
-## Mock Data (Types Included)
-*(full interfaces retained as provided)*
-
----
-
-## Backend Integration Guide
-Includes:
-✔ API service layer  
-✔ Custom hooks  
-✔ Response formats  
-✔ Endpoint table  
-✔ Error handling pattern  
+- Admin Panel: `http://localhost:3000`
+- Company Login: `http://localhost:3000/company/login`
+- Public Profile Example: `http://localhost:3000/medical-profile/usr_001`
 
 ---
 
 ## Environment Variables
 
+Create `.env.local`:
+
+```bash
+NEXT_PUBLIC_APP_NAME="Health Companion Admin"
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+
+NEXT_PUBLIC_API_URL="http://localhost:8000/api"
+
+NEXT_PUBLIC_ENABLE_PDF_DOWNLOAD="true"
+NEXT_PUBLIC_ENABLE_B2B_FEATURES="true"
 ```
-NEXT_PUBLIC_API_URL=http://localhost:8000/api
-NEXT_PUBLIC_ENABLE_PDF_DOWNLOAD=true
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+---
+
+## Key Screens
+
+1. `/` – Super admin login
+2. `/dashboard` – Overview
+3. `/dashboard/[userId]` – User profile
+4. `/dashboard/subscriptions` – B2C/B2B plans
+5. `/dashboard/companies` – Company list
+6. `/dashboard/companies/[companyId]` – Company details
+7. `/dashboard/companies/[companyId]/users` – Admin user management
+8. `/company/login` – Company login
+9. `/company/[companyId]` – Company dashboard
+10. `/company/[companyId]/users` – Company user management
+11. `/medical-profile/[userId]` – Public profile + PDF
+
+---
+
+## Backend Integration Guide
+
+Replace `mock-data` usage with API calls.
+
+### Recommended API Structure
+
+| Method | Endpoint              | Purpose        |
+| ------ | --------------------- | -------------- |
+| POST   | `/auth/admin/login`   | Admin login    |
+| POST   | `/auth/company/login` | Company login  |
+| GET    | `/users`              | List users     |
+| GET    | `/users/:userId`      | User detail    |
+| GET    | `/companies`          | List companies |
+| POST   | `/companies`          | Create company |
+| GET    | `/stats/dashboard`    | App stats      |
+| GET    | `/public/profile/:id` | Public profile |
+
+### Example Public Profile Response
+
+```json
+{
+  "user": { "id": "usr_001", "name": "John Smith" },
+  "personalInfo": { "bloodType": "O+" },
+  "medicines": [],
+  "emergencyContacts": []
+}
+```
+
+---
+
+## Security Considerations
+
+### Admin Panel
+
+- JWT + HttpOnly cookies
+- Role-based access
+
+### Company Portal
+
+- Scoped auth per `companyId`
+
+### Public Profile
+
+- No auth, but:
+  - Use UUID/non-guessable IDs
+  - Rate limit
+  - Allow user to enable/disable link
+
+### Data Privacy
+
+- Never expose password hashes
+- Return minimum required health data
+
+---
+
+## Scripts
+
+```bash
+npm run dev
+npm run build
+npm start
+npm run lint
 ```
 
 ---
 
 ## Deployment
 
-### Vercel
-- Push repo → import to Vercel → add env vars → deploy
+### Vercel (Recommended)
+
+- Push to GitHub
+- Import into Vercel
+- Setup env variables
+- Deploy
 
 ### Docker
 
+```bash
+docker build -t health-companion-admin .
+docker run -p 3000:3000   -e NEXT_PUBLIC_APP_URL="https://your-domain.com"   health-companion-admin
 ```
-docker build -t health-admin .
-docker run -p 3000:3000 health-admin
-```
+
+---
+
+## Contributing
+
+1. Fork repo
+2. Create feature branch:
+
+   ```bash
+   git checkout -b feature/your-feature
+   ```
+
+3. Commit & push:
+
+   ```bash
+   git commit -m "Add your feature"
+   git push origin feature/your-feature
+   ```
+
+4. Open PR
 
 ---
 
 ## License
-MIT License
 
----
-
-## Support
-Email **support@healthcompanion.com**
-
----
-
-Built with ❤️ by the Health Companion Team
+This project is licensed under the **MIT License**.

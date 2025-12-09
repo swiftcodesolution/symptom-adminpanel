@@ -6,16 +6,13 @@ import { ReactNode } from "react";
 
 interface DashboardLayoutProps {
   children: ReactNode;
-  userId: string;
 }
 
-export default function DashboardLayout({
-  children,
-  userId,
-}: DashboardLayoutProps) {
+export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar userId={userId} />
+      {/* Sidebar now handles its own state */}
+      <Sidebar />
       <main className="lg:pl-64 min-h-screen">
         {/* Mobile header spacer */}
         <div className="lg:hidden h-14" />

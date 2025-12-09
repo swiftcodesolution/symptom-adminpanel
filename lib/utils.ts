@@ -1,9 +1,16 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import {
+  Company,
+  CompanyUser,
   defaultPersonalInfo,
+  mockB2CSubscriptions,
+  mockCompanies,
+  mockCompanyUsers,
   mockPersonalInfo,
+  mockSubscriptionPlans,
   PersonalInfo,
+  SubscriptionStats,
 } from "./mock-data";
 
 export function cn(...inputs: ClassValue[]) {
@@ -59,4 +66,43 @@ export const getPersonalInfoWithDefaults = (
     return rest;
   }
   return defaultPersonalInfo;
+};
+
+export const getSubscriptionStats = (): SubscriptionStats => {
+  const activeB2C = mockB2CSubscriptions.filter(
+    (s) => s.status === "active"
+  ).length;
+  const activeCompanies = mockCompanies.filter(
+    (c) => c.status === "active"
+  ).length;
+
+  const b2cRevenue = mockB2CSubscriptions
+    .filter((s) => s.status === "active")
+    .reduce((sum, s) => sum + s.amount, 0);
+
+  const b2bRevenue = mockCompanies
+    .filter((c) => c.status === "active")
+    .reduce((sum, c) => {
+      const plan = mockSubscriptionPlans.find((p) => p.id === c.planId);
+      return sum + (plan?.price || 0);
+    }, 0);
+
+  return {
+    totalB2CSubscriptions: mockB2CSubscriptions.length,
+    activeB2CSubscriptions: activeB2C,
+    totalCompanies: mockCompanies.length,
+    activeCompanies: activeCompanies,
+    totalRevenue: b2cRevenue + b2bRevenue,
+    monthlyRevenue: b2cRevenue + b2bRevenue,
+    trialUsers: mockB2CSubscriptions.filter((s) => s.status === "trial").length,
+    churnRate: 5.2,
+  };
+};
+
+export const getCompanyUsers = (companyId: string): CompanyUser[] => {
+  return mockCompanyUsers.filter((u) => u.companyId === companyId);
+};
+
+export const getCompanyById = (companyId: string): Company | undefined => {
+  return mockCompanies.find((c) => c.id === companyId);
 };
