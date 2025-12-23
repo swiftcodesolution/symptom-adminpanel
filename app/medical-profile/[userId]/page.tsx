@@ -22,7 +22,7 @@ export default function MedicalProfileSamplePage() {
 
     const fetchProfile = async () => {
       try {
-        const res = await fetch(`/api/medical-profile/${userId}`);
+        const res = await fetch(`/panel/api/medical-profile/${userId}`);
         if (!res.ok) {
           throw new Error("Profile not found");
         }
