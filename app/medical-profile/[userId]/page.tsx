@@ -150,7 +150,7 @@ export default function MedicalProfilePage({
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await fetch(`/api/medical-profile/${userId}`);
+        const response = await fetch(`/panel/api/medical-profile/${userId}`);
         if (!response.ok) {
           throw new Error("Failed to fetch data");
         }
