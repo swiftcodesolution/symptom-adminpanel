@@ -48,42 +48,27 @@ export function CompanyAuthProvider({
   const router = useRouter();
   const pathname = usePathname();
 
-  // Lazy state initialization from localStorage
-  const [token, setToken] = useState<string | null>(() => {
+  const [token, setToken] = useState<string | null>(null);
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [companyName, setCompanyName] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) return null;
-      const auth: StoredAuth = JSON.parse(stored);
-      return auth.token;
-    } catch {
+      if (stored) {
+        const auth: StoredAuth = JSON.parse(stored);
+        setToken(auth.token);
+        setCompanyId(auth.companyId);
+        setCompanyName(auth.companyName);
+      }
+    } catch (error) {
+      console.error("Failed to parse stored auth:", error);
       localStorage.removeItem(STORAGE_KEY);
-      return null;
+    } finally {
+      setIsLoading(false);
     }
-  });
-
-  const [companyId, setCompanyId] = useState<string | null>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) return null;
-      const auth: StoredAuth = JSON.parse(stored);
-      return auth.companyId;
-    } catch {
-      return null;
-    }
-  });
-
-  const [companyName, setCompanyName] = useState<string | null>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) return null;
-      const auth: StoredAuth = JSON.parse(stored);
-      return auth.companyName;
-    } catch {
-      return null;
-    }
-  });
-
-  const [isLoading] = useState(false);
+  }, []);
 
   // Redirect logic
   useEffect(() => {
