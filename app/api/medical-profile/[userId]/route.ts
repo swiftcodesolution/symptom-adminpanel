@@ -1,4 +1,3 @@
-// app/api/medical-profile/[userId]/route.ts
 import { db } from "@/lib/firebaseAdmin.mjs";
 import { NextResponse } from "next/server";
 
@@ -26,8 +25,8 @@ export async function GET(request: Request) {
 
     const [
       userSnap,
-      personalDetailsSnap,
-      insuranceSnap,
+      personalDetailsSnaps,
+      insuranceSnaps,
       preferencesSnap,
 
       appointmentsSnap,
@@ -40,8 +39,8 @@ export async function GET(request: Request) {
       pharmaciesSnap,
     ] = await Promise.all([
       db.collection("users").doc(userId).get(),
-      db.collection("personalDetails").doc(userId).get(),
-      db.collection("insurance").doc(userId).get(),
+      db.collection("personalDetails").where("userId", "==", userId).get(),
+      db.collection("insurance").where("userId", "==", userId).get(),
       db.collection("userPreferences").doc(userId).get(),
 
       db.collection("appointments").where("userId", "==", userId).get(),
@@ -79,19 +78,24 @@ export async function GET(request: Request) {
 
     // Personal Details
     console.log("\n📋 PERSONAL DETAILS:");
-    console.log("   - Exists:", personalDetailsSnap.exists);
-    if (personalDetailsSnap.exists) {
+    console.log("   - Count:", personalDetailsSnaps.size);
+    if (personalDetailsSnaps.size > 0) {
       console.log(
         "   - Data:",
-        JSON.stringify(personalDetailsSnap.data(), null, 2)
+        JSON.stringify(personalDetailsSnaps.docs[0].data(), null, 2)
       );
     }
 
     // Insurance
     console.log("\n🛡️  INSURANCE:");
-    console.log("   - Exists:", insuranceSnap.exists);
-    if (insuranceSnap.exists) {
-      console.log("   - Data:", JSON.stringify(insuranceSnap.data(), null, 2));
+    console.log("   - Count:", insuranceSnaps.size);
+    if (insuranceSnaps.size > 0) {
+      insuranceSnaps.docs.forEach((doc, idx) => {
+        console.log(
+          `   - Insurance ${idx + 1}:`,
+          JSON.stringify(doc.data(), null, 2)
+        );
+      });
     }
 
     // User Preferences
@@ -192,10 +196,11 @@ export async function GET(request: Request) {
 
     const response = {
       user: userSnap.data(),
-      personalDetails: personalDetailsSnap.exists
-        ? personalDetailsSnap.data()
-        : null,
-      insurance: insuranceSnap.exists ? insuranceSnap.data() : null,
+      personalDetails:
+        personalDetailsSnaps.size > 0
+          ? personalDetailsSnaps.docs[0].data()
+          : null,
+      insurance: insuranceSnaps.docs.map((d) => ({ id: d.id, ...d.data() })),
       userPreferences: preferencesSnap.exists ? preferencesSnap.data() : null,
 
       appointments: appointmentsSnap.docs.map((d) => ({

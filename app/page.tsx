@@ -1,3 +1,6 @@
+// app\page.tsx
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState } from "react";
@@ -15,6 +18,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Heart, Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
+import {
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
+import { auth } from "@/lib/firebaseClient";
 
 const formContainerVariants = {
   hidden: { opacity: 0 },
@@ -53,20 +61,53 @@ export default function LoginPage() {
       return;
     }
 
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1500));
-    router.push("/dashboard");
+    try {
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+      const token = await userCredential.user.getIdToken();
+
+      // Verify admin claim on the server
+      const res = await fetch("/panel/api/admin/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.admin) {
+        setError("You are not an admin");
+        setIsLoading(false);
+        return;
+      }
+
+      // Redirect to dashboard
+      router.push("/dashboard");
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Login failed");
+      setIsLoading(false);
+    }
   };
 
   const handleResetLink = async () => {
     setResetLoading(true);
-    setResetSuccess(false);
-
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1500));
-
-    setResetLoading(false);
-    setResetSuccess(true);
+    try {
+      const emailInput = document.getElementById(
+        "reset-email"
+      ) as HTMLInputElement;
+      await sendPasswordResetEmail(auth, emailInput.value);
+      setResetSuccess(true);
+    } catch (err: any) {
+      setError(err.message || "Failed to send reset link");
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   return (
@@ -106,7 +147,7 @@ export default function LoginPage() {
       {/* Right side - Login Form */}
       <div className="flex items-center justify-center py-12 min-h-screen px-4">
         <motion.div
-          className="mx-auto grid w-full max-w-[350px] gap-6"
+          className="mx-auto grid w-full max-w-87.5 gap-6"
           variants={formContainerVariants}
           initial="hidden"
           animate="visible"
@@ -166,15 +207,14 @@ export default function LoginPage() {
                     <DialogHeader>
                       <DialogTitle>Reset Password</DialogTitle>
                       <DialogDescription>
-                        Enter your email and phone number to receive a reset
-                        link.
+                        Enter your email to receive a reset link.
                       </DialogDescription>
                     </DialogHeader>
 
                     <div className="grid gap-4 py-4">
                       {resetSuccess ? (
                         <div className="p-4 rounded-lg bg-green-100 text-green-800 text-center">
-                          ✅ Reset link sent! Check your email and phone.
+                          ✅ Reset link sent! Check your email.
                         </div>
                       ) : (
                         <>
@@ -184,15 +224,6 @@ export default function LoginPage() {
                               id="reset-email"
                               type="email"
                               placeholder="admin@healthcompanion.com"
-                            />
-                          </div>
-
-                          <div className="grid gap-2">
-                            <Label htmlFor="reset-phone">Phone Number</Label>
-                            <Input
-                              id="reset-phone"
-                              type="tel"
-                              placeholder="+1 (555) 000-1234"
                             />
                           </div>
 

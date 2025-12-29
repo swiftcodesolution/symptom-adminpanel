@@ -1,7 +1,6 @@
-// app/company/login/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -16,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { mockCompanies } from "@/lib/mock-data";
+import { useCompanyAuth } from "@/lib/CompanyAuthContext";
 
 const formContainerVariants = {
   hidden: { opacity: 0 },
@@ -33,9 +32,22 @@ const formItemVariants = {
 
 export default function CompanyLoginPage() {
   const router = useRouter();
+  const {
+    login,
+    isAuthenticated,
+    isLoading: authLoading,
+    companyId,
+  } = useCompanyAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && companyId) {
+      router.push(`/company/${companyId}`);
+    }
+  }, [authLoading, isAuthenticated, companyId, router]);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -46,40 +58,26 @@ export default function CompanyLoginPage() {
     const username = formData.get("username") as string;
     const password = formData.get("password") as string;
 
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1500));
+    const result = await login(username, password);
 
-    // Find company by admin username
-    const company = mockCompanies.find(
-      (c) => c.adminCredentials.username === username
-    );
-
-    if (!company) {
-      setError("Invalid username or password");
+    if (result.success) {
+      // Redirect will happen via useEffect
+    } else {
+      setError(result.error || "Login failed");
       setIsLoading(false);
-      return;
     }
-
-    if (company.status === "suspended") {
-      setError(
-        "This company account has been suspended. Please contact support."
-      );
-      setIsLoading(false);
-      return;
-    }
-
-    if (company.status === "pending") {
-      setError("This company account is pending activation.");
-      setIsLoading(false);
-      return;
-    }
-
-    // Redirect to company dashboard
-    router.push(`/company/${company.id}`);
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-purple-500/10 via-background to-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-linear-to-b from-purple-500/10 via-background to-background flex items-center justify-center p-4">
       <motion.div
         className="w-full max-w-md"
         variants={formContainerVariants}
@@ -117,6 +115,7 @@ export default function CompanyLoginPage() {
                     required
                     disabled={isLoading}
                     className="h-11"
+                    autoComplete="username"
                   />
                 </div>
 
@@ -130,6 +129,7 @@ export default function CompanyLoginPage() {
                       required
                       disabled={isLoading}
                       className="h-11 pr-10"
+                      autoComplete="current-password"
                     />
                     <Button
                       type="button"

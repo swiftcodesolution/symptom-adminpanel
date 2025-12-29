@@ -1,7 +1,7 @@
-// app/company/[companyId]/page.tsx
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -13,23 +13,60 @@ import {
   ChevronRight,
   Clock,
   Heart,
-  Settings,
   BarChart3,
   Shield,
   AlertCircle,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  formatDate,
-  getRelativeTime,
-  getCompanyById,
-  getCompanyUsers,
-} from "@/lib/utils";
+import { useCompanyAuth } from "@/lib/CompanyAuthContext";
+import { useCompanyFetch } from "@/lib/useCompanyFetch";
+import { parseFirestoreDate } from "@/lib/utils";
+import { format } from "date-fns";
 
-interface CompanyDashboardProps {
-  params: Promise<{ companyId: string }>;
+interface CompanyData {
+  companyId: string;
+  name: string;
+  industry: string;
+  email: string;
+  phone: string;
+  address: string;
+  status: string;
+  plan: string;
+  userCapacity: number;
+  contractStartDate: any;
+  contractEndDate: any;
+  billingContact: {
+    name: string;
+    email: string;
+    phone: string;
+  } | null;
+}
+
+interface User {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  department?: string;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "inactive" | "pending";
+  createdAt?: any;
+  lastLogin?: any;
+}
+
+interface DashboardData {
+  company: CompanyData;
+  stats: {
+    total: number;
+    active: number;
+    inactive: number;
+    pending: number;
+  };
+  recentUsers: User[];
 }
 
 const container = {
@@ -54,13 +91,93 @@ const statusConfig = {
   pending: { label: "Pending", variant: "outline" as const },
 };
 
-export default function CompanyDashboard({ params }: CompanyDashboardProps) {
+const planNames: Record<string, string> = {
+  starter: "Starter",
+  pro: "Professional",
+  enterprise: "Enterprise",
+  none: "No Plan",
+};
+
+export default function CompanyDashboard({
+  params,
+}: {
+  params: Promise<{ companyId: string }>;
+}) {
   const { companyId } = use(params);
+  const { logout, isLoading: authLoading } = useCompanyAuth();
+  const companyFetch = useCompanyFetch();
 
-  const company = getCompanyById(companyId);
-  const companyUsers = getCompanyUsers(companyId);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(
+    null
+  );
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!company) {
+  const fetchDashboard = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const res = await companyFetch(`/panel/api/company/${companyId}`);
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to load dashboard");
+      }
+
+      const data: DashboardData = await res.json();
+      setDashboardData(data);
+    } catch (err) {
+      console.error("Dashboard fetch error:", err);
+      setError(err instanceof Error ? err.message : "Failed to load dashboard");
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, companyFetch]);
+
+  useEffect(() => {
+    if (!authLoading) {
+      fetchDashboard();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, authLoading]);
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="pt-6 text-center">
+            <AlertCircle className="h-16 w-16 mx-auto mb-4 text-destructive" />
+            <h1 className="text-2xl font-bold mb-2">Error Loading Dashboard</h1>
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <div className="flex gap-2 justify-center">
+              <Button variant="outline" onClick={fetchDashboard}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+              <Button variant="ghost" onClick={logout}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Logout
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!dashboardData) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
@@ -70,33 +187,23 @@ export default function CompanyDashboard({ params }: CompanyDashboardProps) {
             <p className="text-muted-foreground mb-4">
               The company portal you&apos;re looking for doesn&apos;t exist.
             </p>
-            <Link href="/company/login">
-              <Button>Back to Login</Button>
-            </Link>
+            <Button onClick={logout}>Back to Login</Button>
           </CardContent>
         </Card>
       </div>
     );
   }
 
+  const { company, stats, recentUsers } = dashboardData;
   const userPercent =
-    company.maxUsers === -1
+    company.userCapacity === -1 || company.userCapacity === 0
       ? 0
-      : (company.currentUsers / company.maxUsers) * 100;
+      : (stats.total / company.userCapacity) * 100;
 
-  const stats = {
-    total: companyUsers.length,
-    active: companyUsers.filter((u) => u.status === "active").length,
-    inactive: companyUsers.filter((u) => u.status === "inactive").length,
-    pending: companyUsers.filter((u) => u.status === "pending").length,
-  };
-
-  const recentUsers = [...companyUsers]
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    )
-    .slice(0, 5);
+  const planName = planNames[company.plan] || company.plan || "No Plan";
+  const contractEndDate = company.contractEndDate
+    ? parseFirestoreDate(company.contractEndDate)
+    : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -114,14 +221,12 @@ export default function CompanyDashboard({ params }: CompanyDashboardProps) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon">
-                <Settings className="h-5 w-5" />
+              <Button variant="ghost" size="icon" onClick={fetchDashboard}>
+                <RefreshCw className="h-5 w-5" />
               </Button>
-              <Link href="/company/login">
-                <Button variant="ghost" size="icon">
-                  <LogOut className="h-5 w-5" />
-                </Button>
-              </Link>
+              <Button variant="ghost" size="icon" onClick={logout}>
+                <LogOut className="h-5 w-5" />
+              </Button>
             </div>
           </div>
         </div>
@@ -136,7 +241,7 @@ export default function CompanyDashboard({ params }: CompanyDashboardProps) {
         >
           {/* Welcome Banner */}
           <motion.div variants={item}>
-            <Card className="bg-gradient-to-r from-purple-500/10 to-purple-500/5">
+            <Card className="bg-linear-to-r from-purple-500/10 to-purple-500/5">
               <CardContent className="p-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
@@ -148,7 +253,7 @@ export default function CompanyDashboard({ params }: CompanyDashboardProps) {
                   <div className="flex items-center gap-3">
                     <Badge variant="outline" className="h-8 px-3">
                       <Shield className="mr-2 h-3 w-3" />
-                      {company.planName}
+                      {planName}
                     </Badge>
                     <Badge
                       variant={
@@ -177,7 +282,8 @@ export default function CompanyDashboard({ params }: CompanyDashboardProps) {
                     <p className="text-xs text-muted-foreground">Total Users</p>
                     <p className="text-2xl font-bold">{stats.total}</p>
                     <p className="text-xs text-muted-foreground">
-                      of {company.maxUsers === -1 ? "∞" : company.maxUsers}
+                      of{" "}
+                      {company.userCapacity === -1 ? "∞" : company.userCapacity}
                     </p>
                   </div>
                   <div className="h-12 w-12 rounded-lg bg-blue-500/10 flex items-center justify-center">
@@ -234,14 +340,14 @@ export default function CompanyDashboard({ params }: CompanyDashboardProps) {
           </motion.div>
 
           {/* Capacity Bar */}
-          {company.maxUsers !== -1 && (
+          {company.userCapacity !== -1 && company.userCapacity > 0 && (
             <motion.div variants={item}>
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium">User Capacity</span>
                     <span className="text-sm text-muted-foreground">
-                      {company.currentUsers} / {company.maxUsers} (
+                      {stats.total} / {company.userCapacity} (
                       {Math.round(userPercent)}%)
                     </span>
                   </div>
@@ -257,6 +363,12 @@ export default function CompanyDashboard({ params }: CompanyDashboardProps) {
                       style={{ width: `${Math.min(userPercent, 100)}%` }}
                     />
                   </div>
+                  {userPercent >= 100 && (
+                    <p className="text-xs text-orange-600 mt-2 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      User limit reached. Contact your administrator to upgrade.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>
@@ -282,13 +394,16 @@ export default function CompanyDashboard({ params }: CompanyDashboardProps) {
                       Add New User
                     </Button>
                   </Link>
-                  <Button variant="outline" className="w-full justify-start">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    disabled
+                  >
                     <BarChart3 className="h-4 w-4 mr-2" />
                     View Reports
-                  </Button>
-                  <Button variant="outline" className="w-full justify-start">
-                    <Settings className="h-4 w-4 mr-2" />
-                    Settings
+                    <Badge variant="secondary" className="ml-auto text-xs">
+                      Soon
+                    </Badge>
                   </Button>
                 </CardContent>
               </Card>
@@ -325,38 +440,48 @@ export default function CompanyDashboard({ params }: CompanyDashboardProps) {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {recentUsers.map((user) => (
-                        <div
-                          key={user.id}
-                          className="flex items-center justify-between p-3 rounded-lg border"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                              <span className="text-sm font-semibold text-primary">
-                                {user.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")}
-                              </span>
+                      {recentUsers.map((user) => {
+                        const role =
+                          roleConfig[user.role] || roleConfig.employee;
+                        const status =
+                          statusConfig[user.status] || statusConfig.pending;
+
+                        return (
+                          <div
+                            key={user.id}
+                            className="flex items-center justify-between p-3 rounded-lg border"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                <span className="text-sm font-semibold text-primary">
+                                  {user.name
+                                    ? user.name
+                                        .split(" ")
+                                        .map((n) => n[0])
+                                        .join("")
+                                        .toUpperCase()
+                                    : "?"}
+                                </span>
+                              </div>
+                              <div>
+                                <p className="font-medium text-sm">
+                                  {user.name}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  @{user.username} •{" "}
+                                  {user.department || "No department"}
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="font-medium text-sm">{user.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                @{user.username} •{" "}
-                                {user.department || "No department"}
-                              </p>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={role.variant}>{role.label}</Badge>
+                              <Badge variant={status.variant}>
+                                {status.label}
+                              </Badge>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={roleConfig[user.role].variant}>
-                              {roleConfig[user.role].label}
-                            </Badge>
-                            <Badge variant={statusConfig[user.status].variant}>
-                              {statusConfig[user.status].label}
-                            </Badge>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </CardContent>
@@ -374,9 +499,14 @@ export default function CompanyDashboard({ params }: CompanyDashboardProps) {
                       <Shield className="h-5 w-5 text-purple-600" />
                     </div>
                     <div>
-                      <p className="font-semibold">{company.planName} Plan</p>
+                      <p className="font-semibold">{planName} Plan</p>
                       <p className="text-sm text-muted-foreground">
-                        Contract ends: {formatDate(company.contractEndDate)}
+                        {contractEndDate
+                          ? `Contract ends: ${format(
+                              contractEndDate,
+                              "MMM d, yyyy"
+                            )}`
+                          : "No contract end date"}
                       </p>
                     </div>
                   </div>

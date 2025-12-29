@@ -1,8 +1,9 @@
-// app/company/[companyId]/users/page.tsx
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Users,
@@ -22,16 +23,14 @@ import {
   AlertCircle,
   Heart,
   LogOut,
-  Settings,
-  Mail,
-  Phone,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -54,8 +53,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -63,11 +71,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { useCompanyAuth } from "@/lib/CompanyAuthContext";
+import { useCompanyFetch } from "@/lib/useCompanyFetch";
+import { parseFirestoreDate } from "@/lib/utils";
 
-import { getRelativeTime, getCompanyById, getCompanyUsers } from "@/lib/utils";
+interface User {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  phone?: string;
+  employeeId?: string;
+  department?: string;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "inactive" | "pending";
+  lastLogin?: any;
+  createdAt?: any;
+}
 
-interface CompanyUsersPageProps {
-  params: Promise<{ companyId: string }>;
+interface CompanyInfo {
+  name: string;
+  userCapacity: number;
 }
 
 const container = {
@@ -102,59 +128,117 @@ const roleConfig = {
 };
 
 const statusConfig = {
-  active: {
-    label: "Active",
-    variant: "default" as const,
-    color: "text-green-600",
-  },
-  inactive: {
-    label: "Inactive",
-    variant: "secondary" as const,
-    color: "text-gray-600",
-  },
-  pending: {
-    label: "Pending",
-    variant: "outline" as const,
-    color: "text-yellow-600",
-  },
+  active: { label: "Active", variant: "default" as const },
+  inactive: { label: "Inactive", variant: "secondary" as const },
+  pending: { label: "Pending", variant: "outline" as const },
 };
 
-export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
+export default function CompanyUsersPage({
+  params,
+}: {
+  params: Promise<{ companyId: string }>;
+}) {
   const { companyId } = use(params);
+  const searchParams = useSearchParams();
+  const { logout, companyName, isLoading: authLoading } = useCompanyAuth();
+  const companyFetch = useCompanyFetch();
+
+  // Data states
+  const [users, setUsers] = useState<User[]>([]);
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filter states
   const [searchQuery, setSearchQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState<
+    "all" | "admin" | "manager" | "employee"
+  >("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "active" | "inactive" | "pending"
+  >("all");
+
+  // Dialog states
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
 
-  const company = getCompanyById(companyId);
-  const companyUsers = getCompanyUsers(companyId);
+  // Selected user & action states
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [newStatus, setNewStatus] = useState<"active" | "inactive">("active");
 
-  if (!company) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
-          <CardContent className="pt-6 text-center">
-            <AlertCircle className="h-16 w-16 mx-auto mb-4 text-destructive" />
-            <h1 className="text-2xl font-bold mb-2">Company Not Found</h1>
-            <p className="text-muted-foreground mb-4">
-              The company portal you&apos;re looking for doesn&apos;t exist.
-            </p>
-            <Link href="/company/login">
-              <Button>Back to Login</Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Loading states for actions
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [changingStatus, setChangingStatus] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  const filteredUsers = companyUsers.filter((user) => {
+  // Edit form state
+  const [editForm, setEditForm] = useState({
+    name: "",
+    username: "",
+    email: "",
+    phone: "",
+    employeeId: "",
+    department: "",
+    role: "employee" as "admin" | "manager" | "employee",
+  });
+
+  // Check for action=add in URL
+  useEffect(() => {
+    if (searchParams.get("action") === "add") {
+      setIsCreateDialogOpen(true);
+    }
+  }, [searchParams]);
+
+  // Fetch data
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [dashboardRes, usersRes] = await Promise.all([
+        companyFetch(`/panel/api/company/${companyId}`),
+        companyFetch(`/panel/api/company/${companyId}/users`),
+      ]);
+
+      if (!dashboardRes.ok) {
+        throw new Error("Failed to load company data");
+      }
+
+      const dashboardData = await dashboardRes.json();
+      const usersData: User[] = usersRes.ok ? await usersRes.json() : [];
+
+      setCompanyInfo({
+        name: dashboardData.company.name,
+        userCapacity: dashboardData.company.userCapacity,
+      });
+      setUsers(usersData);
+    } catch (err) {
+      console.error("Fetch error:", err);
+      setError(err instanceof Error ? err.message : "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, companyFetch]);
+
+  useEffect(() => {
+    if (!authLoading) {
+      fetchData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, authLoading]);
+
+  // Filter users
+  const filteredUsers = users.filter((user) => {
     const matchesSearch =
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (user.department?.toLowerCase() || "").includes(
         searchQuery.toLowerCase()
       );
@@ -164,24 +248,360 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
     return matchesSearch && matchesRole && matchesStatus;
   });
 
+  // Calculate stats
   const stats = {
-    total: companyUsers.length,
-    active: companyUsers.filter((u) => u.status === "active").length,
-    inactive: companyUsers.filter((u) => u.status === "inactive").length,
-    pending: companyUsers.filter((u) => u.status === "pending").length,
+    total: users.length,
+    active: users.filter((u) => u.status === "active").length,
+    inactive: users.filter((u) => u.status === "inactive").length,
+    pending: users.filter((u) => u.status === "pending").length,
   };
 
   const canAddMoreUsers =
-    company.maxUsers === -1 || company.currentUsers < company.maxUsers;
-  const remainingSlots =
-    company.maxUsers === -1
-      ? "Unlimited"
-      : company.maxUsers - company.currentUsers;
+    companyInfo &&
+    (companyInfo.userCapacity === -1 ||
+      users.length < companyInfo.userCapacity);
 
-  const handleResetPassword = (userId: string) => {
-    setSelectedUser(userId);
-    setIsResetPasswordOpen(true);
+  const remainingSlots =
+    companyInfo?.userCapacity === -1
+      ? "Unlimited"
+      : (companyInfo?.userCapacity || 0) - users.length;
+
+  // Export CSV
+  const handleExportCSV = () => {
+    if (users.length === 0) {
+      toast.error("No users to export");
+      return;
+    }
+
+    setExporting(true);
+
+    try {
+      const headers = [
+        "Name",
+        "Username",
+        "Email",
+        "Phone",
+        "Employee ID",
+        "Department",
+        "Role",
+        "Status",
+        "Last Login",
+        "Created At",
+      ];
+
+      const rows = users.map((user) => {
+        const lastLogin = user.lastLogin
+          ? parseFirestoreDate(user.lastLogin)
+          : null;
+        const createdAt = user.createdAt
+          ? parseFirestoreDate(user.createdAt)
+          : null;
+
+        return [
+          user.name || "",
+          user.username || "",
+          user.email || "",
+          user.phone || "",
+          user.employeeId || "",
+          user.department || "",
+          user.role || "",
+          user.status || "",
+          lastLogin ? format(lastLogin, "yyyy-MM-dd HH:mm:ss") : "Never",
+          createdAt ? format(createdAt, "yyyy-MM-dd HH:mm:ss") : "",
+        ];
+      });
+
+      const escapeCSV = (value: string) => {
+        if (
+          value.includes(",") ||
+          value.includes('"') ||
+          value.includes("\n")
+        ) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const csvContent = [
+        headers.map(escapeCSV).join(","),
+        ...rows.map((row) => row.map(escapeCSV).join(",")),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+
+      const sanitizedName = (companyInfo?.name || "company")
+        .replace(/[^a-zA-Z0-9\s-]/g, "")
+        .replace(/\s+/g, "_")
+        .toLowerCase();
+      const timestamp = format(new Date(), "yyyy-MM-dd");
+      const filename = `${sanitizedName}_users_${timestamp}.csv`;
+
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success(`Exported ${users.length} users`);
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Failed to export users");
+    } finally {
+      setExporting(false);
+    }
   };
+
+  // Create User
+  const handleCreateUser = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+
+    const payload = {
+      name: `${formData.get("first-name")} ${formData.get("last-name")}`.trim(),
+      username: formData.get("username"),
+      email: formData.get("email"),
+      phone: formData.get("phone") || undefined,
+      employeeId: formData.get("employee-id") || undefined,
+      department: formData.get("department") || undefined,
+      role: formData.get("role") || "employee",
+      password: formData.get("password"),
+    };
+
+    try {
+      setCreating(true);
+
+      const res = await companyFetch(`/panel/api/company/${companyId}/users`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to create user");
+      }
+
+      toast.success("User created successfully");
+      setIsCreateDialogOpen(false);
+      e.currentTarget.reset();
+      await fetchData();
+    } catch (error) {
+      console.error("Create user error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create user"
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Open Edit Dialog
+  const openEditDialog = (user: User) => {
+    setSelectedUser(user);
+    setEditForm({
+      name: user.name || "",
+      username: user.username || "",
+      email: user.email || "",
+      phone: user.phone || "",
+      employeeId: user.employeeId || "",
+      department: user.department || "",
+      role: user.role || "employee",
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  // Edit User
+  const handleEditUser = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+
+    try {
+      setSaving(true);
+
+      const res = await companyFetch(
+        `/panel/api/company/${companyId}/users/${selectedUser.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(editForm),
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update user");
+      }
+
+      toast.success("User updated successfully");
+      setIsEditDialogOpen(false);
+      setSelectedUser(null);
+      await fetchData();
+    } catch (error) {
+      console.error("Edit user error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to update user"
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Reset Password
+  const handleResetPassword = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+
+    const formData = new FormData(e.currentTarget);
+    const newPassword = formData.get("new-password") as string;
+    const confirmPassword = formData.get("confirm-password") as string;
+
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+
+    try {
+      setResetting(true);
+
+      const res = await companyFetch(
+        `/panel/api/company/${companyId}/users/${selectedUser.id}/reset-password`,
+        {
+          method: "POST",
+          body: JSON.stringify({ password: newPassword }),
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to reset password");
+      }
+
+      toast.success("Password reset successfully");
+      setIsResetPasswordOpen(false);
+      setSelectedUser(null);
+    } catch (error) {
+      console.error("Reset password error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to reset password"
+      );
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  // Change Status (Activate/Deactivate)
+  const handleChangeStatus = async () => {
+    if (!selectedUser) return;
+
+    try {
+      setChangingStatus(true);
+
+      const res = await companyFetch(
+        `/panel/api/company/${companyId}/users/${selectedUser.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update status");
+      }
+
+      toast.success(
+        `User ${
+          newStatus === "active" ? "activated" : "deactivated"
+        } successfully`
+      );
+      setIsStatusDialogOpen(false);
+      setSelectedUser(null);
+      await fetchData();
+    } catch (error) {
+      console.error("Change status error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to update status"
+      );
+    } finally {
+      setChangingStatus(false);
+    }
+  };
+
+  // Delete User
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+
+    try {
+      setDeleting(true);
+
+      const res = await companyFetch(
+        `/panel/api/company/${companyId}/users/${selectedUser.id}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to delete user");
+      }
+
+      toast.success("User deleted successfully");
+      setIsDeleteDialogOpen(false);
+      setSelectedUser(null);
+      await fetchData();
+    } catch (error) {
+      console.error("Delete user error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete user"
+      );
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading users...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="pt-6 text-center">
+            <AlertCircle className="h-16 w-16 mx-auto mb-4 text-destructive" />
+            <h1 className="text-2xl font-bold mb-2">Error Loading Users</h1>
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <div className="flex gap-2 justify-center">
+              <Button variant="outline" onClick={fetchData}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+              <Link href={`/company/${companyId}`}>
+                <Button variant="ghost">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -199,19 +619,19 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
                 <Building2 className="w-6 h-6 text-purple-600" />
               </div>
               <div>
-                <h1 className="font-bold text-lg">{company.name}</h1>
+                <h1 className="font-bold text-lg">
+                  {companyInfo?.name || companyName}
+                </h1>
                 <p className="text-xs text-muted-foreground">User Management</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon">
-                <Settings className="h-5 w-5" />
+              <Button variant="ghost" size="icon" onClick={fetchData}>
+                <RefreshCw className="h-5 w-5" />
               </Button>
-              <Link href="/company/login">
-                <Button variant="ghost" size="icon">
-                  <LogOut className="h-5 w-5" />
-                </Button>
-              </Link>
+              <Button variant="ghost" size="icon" onClick={logout}>
+                <LogOut className="h-5 w-5" />
+              </Button>
             </div>
           </div>
         </div>
@@ -236,108 +656,26 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-              <Dialog
-                open={isCreateDialogOpen}
-                onOpenChange={setIsCreateDialogOpen}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportCSV}
+                disabled={exporting}
               >
-                <DialogTrigger asChild>
-                  <Button disabled={!canAddMoreUsers}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add User
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Add New Employee</DialogTitle>
-                    <DialogDescription>
-                      Create a new account for an employee. They will receive
-                      their login credentials.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="first-name">First Name</Label>
-                        <Input id="first-name" placeholder="John" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="last-name">Last Name</Label>
-                        <Input id="last-name" placeholder="Doe" />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="john.doe@company.com"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone (Optional)</Label>
-                      <Input
-                        id="phone"
-                        type="tel"
-                        placeholder="+1 (555) 000-0000"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="username">Username</Label>
-                        <Input id="username" placeholder="john.doe" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="employee-id">Employee ID</Label>
-                        <Input id="employee-id" placeholder="EMP-001" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="department">Department</Label>
-                        <Input id="department" placeholder="Engineering" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="role">Role</Label>
-                        <Select defaultValue="employee">
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="manager">Manager</SelectItem>
-                            <SelectItem value="employee">Employee</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="password">Initial Password</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        placeholder="Create a temporary password"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        The user will be asked to change this on first login.
-                      </p>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      onClick={() => setIsCreateDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button onClick={() => setIsCreateDialogOpen(false)}>
-                      Create User
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                {exporting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Export CSV
+              </Button>
+              <Button
+                onClick={() => setIsCreateDialogOpen(true)}
+                disabled={!canAddMoreUsers}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add User
+              </Button>
             </div>
           </motion.div>
 
@@ -355,7 +693,7 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
                     </p>
                     <p className="text-sm text-muted-foreground">
                       You&apos;ve reached the maximum number of users (
-                      {company.maxUsers}) for your plan. Contact your
+                      {companyInfo?.userCapacity}) for your plan. Contact your
                       administrator to upgrade.
                     </p>
                   </div>
@@ -369,61 +707,39 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
             variants={item}
             className="grid grid-cols-2 md:grid-cols-5 gap-4"
           >
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-blue-500" />
-                  <div>
-                    <p className="text-xl font-bold">{stats.total}</p>
-                    <p className="text-xs text-muted-foreground">Total Users</p>
+            {[
+              { label: "Total", value: stats.total, color: "bg-blue-500" },
+              { label: "Active", value: stats.active, color: "bg-green-500" },
+              {
+                label: "Pending",
+                value: stats.pending,
+                color: "bg-yellow-500",
+              },
+              {
+                label: "Inactive",
+                value: stats.inactive,
+                color: "bg-gray-500",
+              },
+              {
+                label: "Slots Left",
+                value: remainingSlots,
+                color: "bg-purple-500",
+              },
+            ].map((stat) => (
+              <Card key={stat.label}>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <div className={`h-2 w-2 rounded-full ${stat.color}`} />
+                    <div>
+                      <p className="text-xl font-bold">{stat.value}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {stat.label}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-green-500" />
-                  <div>
-                    <p className="text-xl font-bold">{stats.active}</p>
-                    <p className="text-xs text-muted-foreground">Active</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-yellow-500" />
-                  <div>
-                    <p className="text-xl font-bold">{stats.pending}</p>
-                    <p className="text-xs text-muted-foreground">Pending</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-gray-500" />
-                  <div>
-                    <p className="text-xl font-bold">{stats.inactive}</p>
-                    <p className="text-xs text-muted-foreground">Inactive</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-purple-500" />
-                  <div>
-                    <p className="text-xl font-bold">{remainingSlots}</p>
-                    <p className="text-xs text-muted-foreground">Slots Left</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            ))}
           </motion.div>
 
           {/* Filters */}
@@ -446,7 +762,7 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
                   <Filter className="h-4 w-4 mr-2" />
                   {roleFilter === "all"
                     ? "All Roles"
-                    : roleConfig[roleFilter as keyof typeof roleConfig]?.label}
+                    : roleConfig[roleFilter]?.label}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
@@ -471,8 +787,7 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
                   <Filter className="h-4 w-4 mr-2" />
                   {statusFilter === "all"
                     ? "All Status"
-                    : statusConfig[statusFilter as keyof typeof statusConfig]
-                        ?.label}
+                    : statusConfig[statusFilter]?.label}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
@@ -508,11 +823,11 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
                     <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
                     <p className="font-medium">No users found</p>
                     <p className="text-sm mt-1">
-                      {companyUsers.length === 0
+                      {users.length === 0
                         ? "Add your first employee to get started"
                         : "Try adjusting your search or filters"}
                     </p>
-                    {companyUsers.length === 0 && canAddMoreUsers && (
+                    {users.length === 0 && canAddMoreUsers && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -546,8 +861,13 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
                       </TableHeader>
                       <TableBody>
                         {filteredUsers.map((user) => {
-                          const role = roleConfig[user.role];
-                          const status = statusConfig[user.status];
+                          const role =
+                            roleConfig[user.role] || roleConfig.employee;
+                          const status =
+                            statusConfig[user.status] || statusConfig.pending;
+                          const lastLogin = user.lastLogin
+                            ? parseFirestoreDate(user.lastLogin)
+                            : null;
 
                           return (
                             <TableRow key={user.id}>
@@ -560,9 +880,12 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
                                       className={`text-sm font-semibold ${role.color}`}
                                     >
                                       {user.name
-                                        .split(" ")
-                                        .map((n) => n[0])
-                                        .join("")}
+                                        ? user.name
+                                            .split(" ")
+                                            .map((n) => n[0])
+                                            .join("")
+                                            .toUpperCase()
+                                        : "?"}
                                     </span>
                                   </div>
                                   <div className="min-w-0">
@@ -600,8 +923,8 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
                               <TableCell className="hidden sm:table-cell">
                                 <div className="flex items-center gap-1 text-sm text-muted-foreground">
                                   <Clock className="h-3 w-3" />
-                                  {user.lastLogin
-                                    ? getRelativeTime(user.lastLogin)
+                                  {lastLogin
+                                    ? format(lastLogin, "MMM d, yyyy")
                                     : "Never"}
                                 </div>
                               </TableCell>
@@ -613,63 +936,56 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => openEditDialog(user)}
+                                    >
                                       <Edit className="h-4 w-4 mr-2" />
                                       Edit Details
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
-                                      onClick={() =>
-                                        handleResetPassword(user.id)
-                                      }
+                                      onClick={() => {
+                                        setSelectedUser(user);
+                                        setIsResetPasswordOpen(true);
+                                      }}
                                     >
                                       <Key className="h-4 w-4 mr-2" />
                                       Reset Password
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     {user.status === "active" ? (
-                                      <DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          setSelectedUser(user);
+                                          setNewStatus("inactive");
+                                          setIsStatusDialogOpen(true);
+                                        }}
+                                      >
                                         <UserX className="h-4 w-4 mr-2" />
                                         Deactivate
                                       </DropdownMenuItem>
                                     ) : (
-                                      <DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          setSelectedUser(user);
+                                          setNewStatus("active");
+                                          setIsStatusDialogOpen(true);
+                                        }}
+                                      >
                                         <UserCheck className="h-4 w-4 mr-2" />
                                         Activate
                                       </DropdownMenuItem>
                                     )}
                                     <DropdownMenuSeparator />
-                                    <Dialog>
-                                      <DialogTrigger asChild>
-                                        <DropdownMenuItem
-                                          onSelect={(e) => e.preventDefault()}
-                                          className="text-destructive"
-                                        >
-                                          <Trash2 className="h-4 w-4 mr-2" />
-                                          Delete User
-                                        </DropdownMenuItem>
-                                      </DialogTrigger>
-                                      <DialogContent className="sm:max-w-[425px]">
-                                        <DialogHeader>
-                                          <DialogTitle>
-                                            Delete User?
-                                          </DialogTitle>
-                                          <DialogDescription>
-                                            Are you sure you want to delete{" "}
-                                            <strong>{user.name}</strong>? This
-                                            action cannot be undone and will
-                                            remove all their data.
-                                          </DialogDescription>
-                                        </DialogHeader>
-                                        <DialogFooter className="flex justify-end gap-2">
-                                          <Button variant="outline">
-                                            Cancel
-                                          </Button>
-                                          <Button variant="destructive">
-                                            Delete
-                                          </Button>
-                                        </DialogFooter>
-                                      </DialogContent>
-                                    </Dialog>
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setSelectedUser(user);
+                                        setIsDeleteDialogOpen(true);
+                                      }}
+                                      className="text-destructive"
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Delete User
+                                    </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </TableCell>
@@ -696,53 +1012,398 @@ export default function CompanyUsersPage({ params }: CompanyUsersPageProps) {
         </div>
       </footer>
 
-      {/* Reset Password Dialog */}
-      <Dialog open={isResetPasswordOpen} onOpenChange={setIsResetPasswordOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Reset User Password</DialogTitle>
-            <DialogDescription>
-              Set a new password for this user. They will need to use this
-              password to log in.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="new-password">New Password</Label>
-              <Input
-                id="new-password"
-                type="password"
-                placeholder="Enter new password"
-              />
+      {/* Create User Dialog */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <form onSubmit={handleCreateUser}>
+            <DialogHeader>
+              <DialogTitle>Add New Employee</DialogTitle>
+              <DialogDescription>
+                Create a new account for an employee. They will receive their
+                login credentials.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="first-name">First Name</Label>
+                  <Input
+                    id="first-name"
+                    name="first-name"
+                    placeholder="John"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="last-name">Last Name</Label>
+                  <Input
+                    id="last-name"
+                    name="last-name"
+                    placeholder="Doe"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="john.doe@company.com"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone (Optional)</Label>
+                <Input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  placeholder="+1 (555) 000-0000"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    name="username"
+                    placeholder="john.doe"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="employee-id">Employee ID</Label>
+                  <Input
+                    id="employee-id"
+                    name="employee-id"
+                    placeholder="EMP-001"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="department">Department</Label>
+                  <Input
+                    id="department"
+                    name="department"
+                    placeholder="Engineering"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="role">Role</Label>
+                  <Select name="role" defaultValue="employee">
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="employee">Employee</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Initial Password</Label>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  placeholder="Minimum 6 characters"
+                  required
+                  minLength={6}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The user will be asked to change this on first login.
+                </p>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm Password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                placeholder="Confirm new password"
-              />
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <input type="checkbox" id="notify-user" className="rounded" />
-              <label htmlFor="notify-user">
-                Send password reset notification to user&apos;s email
-              </label>
-            </div>
-          </div>
-          <DialogFooter className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setIsResetPasswordOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button onClick={() => setIsResetPasswordOpen(false)}>
-              Reset Password
-            </Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsCreateDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creating}>
+                {creating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create User"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
+
+      {/* Edit User Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-md">
+          <form onSubmit={handleEditUser}>
+            <DialogHeader>
+              <DialogTitle>Edit Employee</DialogTitle>
+              <DialogDescription>
+                Update the employee&apos;s information.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Full Name</Label>
+                <Input
+                  id="edit-name"
+                  value={editForm.name}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, name: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-username">Username</Label>
+                  <Input
+                    id="edit-username"
+                    value={editForm.username}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, username: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-employee-id">Employee ID</Label>
+                  <Input
+                    id="edit-employee-id"
+                    value={editForm.employeeId}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, employeeId: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-email">Email</Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, email: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-phone">Phone</Label>
+                <Input
+                  id="edit-phone"
+                  type="tel"
+                  value={editForm.phone}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, phone: e.target.value })
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-department">Department</Label>
+                  <Input
+                    id="edit-department"
+                    value={editForm.department}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, department: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-role">Role</Label>
+                  <Select
+                    value={editForm.role}
+                    onValueChange={(value: "admin" | "manager" | "employee") =>
+                      setEditForm({ ...editForm, role: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="employee">Employee</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={isResetPasswordOpen} onOpenChange={setIsResetPasswordOpen}>
+        <DialogContent>
+          <form onSubmit={handleResetPassword}>
+            <DialogHeader>
+              <DialogTitle>Reset Password</DialogTitle>
+              <DialogDescription>
+                Set a new password for <strong>{selectedUser?.name}</strong>.
+                They will need to use this password to log in.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New Password</Label>
+                <Input
+                  id="new-password"
+                  name="new-password"
+                  type="password"
+                  placeholder="Minimum 6 characters"
+                  required
+                  minLength={6}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <Input
+                  id="confirm-password"
+                  name="confirm-password"
+                  type="password"
+                  placeholder="Confirm new password"
+                  required
+                  minLength={6}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsResetPasswordOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={resetting}>
+                {resetting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Resetting...
+                  </>
+                ) : (
+                  "Reset Password"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Status Change Dialog */}
+      <AlertDialog
+        open={isStatusDialogOpen}
+        onOpenChange={setIsStatusDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {newStatus === "active" ? "Activate User" : "Deactivate User"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {newStatus === "active" ? (
+                <>
+                  Are you sure you want to activate{" "}
+                  <strong>{selectedUser?.name}</strong>? They will be able to
+                  log into the Health Companion app.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to deactivate{" "}
+                  <strong>{selectedUser?.name}</strong>? They will no longer be
+                  able to log into the Health Companion app.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleChangeStatus}
+              className={
+                newStatus === "active" ? "bg-green-600 hover:bg-green-700" : ""
+              }
+              disabled={changingStatus}
+            >
+              {changingStatus ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : newStatus === "active" ? (
+                "Activate"
+              ) : (
+                "Deactivate"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete User Dialog */}
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete User</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete{" "}
+              <strong>{selectedUser?.name}</strong>? This action cannot be
+              undone and will remove all their data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteUser}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete User"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

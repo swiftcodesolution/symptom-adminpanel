@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// lib\utils.ts
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import {
@@ -105,4 +107,21 @@ export const getCompanyUsers = (companyId: string): CompanyUser[] => {
 
 export const getCompanyById = (companyId: string): Company | undefined => {
   return mockCompanies.find((c) => c.id === companyId);
+};
+
+export const parseFirestoreDate = (date: any): Date | null => {
+  if (!date) return null;
+
+  // Firestore Timestamp object
+  if (date._seconds !== undefined) {
+    return new Date(date._seconds * 1000);
+  }
+
+  // Already a Date or valid date string
+  try {
+    const parsed = new Date(date);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  } catch {
+    return null;
+  }
 };

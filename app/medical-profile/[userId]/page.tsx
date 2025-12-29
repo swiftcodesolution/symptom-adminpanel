@@ -25,6 +25,7 @@ import {
   Loader2,
   User,
   Users,
+  Shield,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -96,10 +97,21 @@ interface Pharmacy {
   services?: string;
 }
 
+interface InsurancePolicy {
+  id: string;
+  companyName: string;
+  policyNo: string;
+  contactPersonName: string;
+  contactPersonNo: string;
+  issueDate: string;
+  expiryDate: string;
+}
+
 interface ApiData {
   user: User;
   personalDetails: any | null;
-  insurance: any | null;
+  insurance: InsurancePolicy[];
+  userPreferences: any | null;
   medicines: Medicine[];
   emergencyContacts: EmergencyContact[];
   doctors: Doctor[];
@@ -142,6 +154,7 @@ export default function MedicalProfilePage({
     "emergency",
     "vitals",
     "medications",
+    "insurance",
   ]);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [data, setData] = useState<ApiData | null>(null);
@@ -211,12 +224,18 @@ export default function MedicalProfilePage({
       const textColor: [number, number, number] = [15, 23, 42];
       const lightBg: [number, number, number] = [248, 250, 252];
 
-      const userName = user.displayName || "Unknown User";
-      const userDOB = getAnswerByQuestion(user.answers, "date of birth");
-      const userHeight = getAnswerByQuestion(user.answers, "height");
-      const userWeight = getAnswerByQuestion(user.answers, "weight");
-      const allergies = getAllergies(user.answers);
-      const conditions = getConditions(user.answers);
+      const userName = data.user.displayName || "Unknown User";
+      const userDOB = getAnswerByQuestion(data.user.answers, "date of birth");
+      const userHeight = getAnswerByQuestion(data.user.answers, "height");
+      const userWeight = getAnswerByQuestion(data.user.answers, "weight");
+      const allergies = getAllergies(data.user.answers);
+      const conditions = getConditions(data.user.answers);
+
+      const userMedicines = data.medicines || [];
+      const userContacts = data.emergencyContacts || [];
+      const userDoctors = data.doctors || [];
+      const userPharmacies = data.pharmacies || [];
+      const userInsurance = data.insurance || [];
 
       // Helper functions
       const addNewPageIfNeeded = (requiredSpace: number) => {
@@ -316,7 +335,7 @@ export default function MedicalProfilePage({
       pdf.setTextColor(...secondaryColor);
       pdf.text("Phone:", margin + 70, yPos + 18);
       pdf.setTextColor(...textColor);
-      pdf.text(user.phoneNumber || "N/A", margin + 88, yPos + 18);
+      pdf.text(data.user.phoneNumber || "N/A", margin + 88, yPos + 18);
 
       // Row 2
       pdf.setTextColor(...secondaryColor);
@@ -332,7 +351,7 @@ export default function MedicalProfilePage({
       pdf.setTextColor(...secondaryColor);
       pdf.text("Email:", margin + 100, yPos + 26);
       pdf.setTextColor(...textColor);
-      pdf.text(user.email || "N/A", margin + 116, yPos + 26);
+      pdf.text(data.user.email || "N/A", margin + 116, yPos + 26);
 
       yPos += 42;
 
@@ -341,7 +360,7 @@ export default function MedicalProfilePage({
       if (userContacts.length === 0) {
         drawText("No emergency contacts listed", { color: secondaryColor });
       } else {
-        userContacts.forEach((contact: EmergencyContact) => {
+        userContacts.forEach((contact) => {
           addNewPageIfNeeded(18);
 
           pdf.setFillColor(254, 242, 242);
@@ -378,7 +397,7 @@ export default function MedicalProfilePage({
       if (allergies.length === 0) {
         drawText("No known allergies", { color: [22, 163, 74], indent: 3 });
       } else {
-        allergies.forEach((allergy: string) => {
+        allergies.forEach((allergy) => {
           addNewPageIfNeeded(8);
           pdf.setFillColor(254, 226, 226);
           pdf.roundedRect(
@@ -409,7 +428,7 @@ export default function MedicalProfilePage({
       if (conditions.length === 0) {
         drawText("No known conditions", { color: [22, 163, 74], indent: 3 });
       } else {
-        conditions.forEach((condition: string) => {
+        conditions.forEach((condition) => {
           addNewPageIfNeeded(8);
           pdf.setFillColor(241, 245, 249);
           pdf.roundedRect(
@@ -431,13 +450,48 @@ export default function MedicalProfilePage({
 
       yPos += 5;
 
+      // ===== INSURANCE =====
+      if (userInsurance.length > 0) {
+        drawSectionHeader("🛡️ INSURANCE INFORMATION", [59, 130, 246]);
+
+        userInsurance.forEach((policy) => {
+          addNewPageIfNeeded(28);
+
+          pdf.setFillColor(...lightBg);
+          pdf.roundedRect(margin, yPos - 2, contentWidth, 24, 2, 2, "F");
+
+          pdf.setFontSize(10);
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(...textColor);
+          pdf.text(policy.companyName, margin + 3, yPos + 4);
+
+          pdf.setFontSize(9);
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(...secondaryColor);
+          pdf.text(`Policy No: ${policy.policyNo}`, margin + 3, yPos + 10);
+          pdf.text(
+            `Contact: ${policy.contactPersonName} - ${policy.contactPersonNo}`,
+            margin + 3,
+            yPos + 15
+          );
+          pdf.text(
+            `Issue: ${policy.issueDate} | Expiry: ${policy.expiryDate}`,
+            margin + 3,
+            yPos + 20
+          );
+
+          yPos += 28;
+        });
+        yPos += 3;
+      }
+
       // ===== CURRENT MEDICATIONS =====
       drawSectionHeader("💊 CURRENT MEDICATIONS", [147, 51, 234]);
 
       if (userMedicines.length === 0) {
         drawText("No current medications", { color: secondaryColor });
       } else {
-        userMedicines.forEach((med: Medicine) => {
+        userMedicines.forEach((med) => {
           addNewPageIfNeeded(22);
 
           pdf.setFillColor(...lightBg);
@@ -469,7 +523,7 @@ export default function MedicalProfilePage({
       if (userDoctors.length > 0) {
         drawSectionHeader("👨‍⚕️ HEALTHCARE PROVIDERS", [34, 197, 94]);
 
-        userDoctors.forEach((doc: Doctor) => {
+        userDoctors.forEach((doc) => {
           addNewPageIfNeeded(24);
 
           pdf.setFillColor(...lightBg);
@@ -503,7 +557,7 @@ export default function MedicalProfilePage({
       if (userPharmacies.length > 0) {
         drawSectionHeader("🏪 PHARMACIES", [168, 85, 247]);
 
-        userPharmacies.forEach((pharm: Pharmacy) => {
+        userPharmacies.forEach((pharm) => {
           addNewPageIfNeeded(20);
 
           pdf.setFillColor(...lightBg);
@@ -550,7 +604,7 @@ export default function MedicalProfilePage({
       );
       pdf.text(
         `Last Updated: ${formatDate(
-          user.lastUpdated || new Date().toISOString()
+          data.user.lastUpdated || new Date().toISOString()
         )}`,
         pageWidth - margin - 60,
         footerY + 4
@@ -675,6 +729,7 @@ export default function MedicalProfilePage({
   const userDoctors = data.doctors || [];
   const userPharmacies = data.pharmacies || [];
   const personalContacts = data.personalContacts || [];
+  const userInsurance = data.insurance || [];
 
   return (
     <div className="min-h-screen bg-linear-to-b from-primary/5 via-background to-background">
@@ -778,7 +833,7 @@ export default function MedicalProfilePage({
 
               {/* Quick Stats */}
               <CardContent className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <div className="text-center p-3 rounded-lg bg-muted/50">
                     <Ruler className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
                     <p className="text-lg font-bold">{userHeight}</p>
@@ -799,10 +854,104 @@ export default function MedicalProfilePage({
                     <p className="text-lg font-bold">{allergies.length}</p>
                     <p className="text-xs text-muted-foreground">Allergies</p>
                   </div>
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <Shield className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
+                    <p className="text-lg font-bold">{userInsurance.length}</p>
+                    <p className="text-xs text-muted-foreground">Insurance</p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           </motion.div>
+
+          {/* Insurance Policies */}
+          {userInsurance.length > 0 && (
+            <motion.div variants={item}>
+              <Card className="border-blue-500/30">
+                <Collapsible
+                  open={expandedSections.includes("insurance")}
+                  onOpenChange={() => toggleSection("insurance")}
+                >
+                  <CollapsibleTrigger asChild>
+                    <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                      <CardTitle className="text-lg flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                            <Shield className="h-5 w-5 text-blue-500" />
+                          </div>
+                          Insurance Information
+                          <Badge variant="secondary" className="ml-2">
+                            {userInsurance.length}
+                          </Badge>
+                        </div>
+                        <ChevronDown
+                          className={`h-5 w-5 transition-transform ${
+                            expandedSections.includes("insurance")
+                              ? "rotate-180"
+                              : ""
+                          }`}
+                        />
+                      </CardTitle>
+                    </CardHeader>
+                  </CollapsibleTrigger>
+
+                  <CollapsibleContent>
+                    <CardContent className="pt-0">
+                      <div className="space-y-3">
+                        {userInsurance.map((policy) => (
+                          <div
+                            key={policy.id}
+                            className="p-4 rounded-lg border bg-muted/30"
+                          >
+                            <div className="space-y-2">
+                              <p className="font-semibold text-lg">
+                                {policy.companyName}
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                                <div>
+                                  <span className="text-muted-foreground">
+                                    Policy No:
+                                  </span>{" "}
+                                  <span className="font-medium">
+                                    {policy.policyNo}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">
+                                    Contact:
+                                  </span>{" "}
+                                  <span className="font-medium">
+                                    {policy.contactPersonName} (
+                                    {policy.contactPersonNo})
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">
+                                    Issue Date:
+                                  </span>{" "}
+                                  <span className="font-medium">
+                                    {policy.issueDate}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">
+                                    Expiry Date:
+                                  </span>{" "}
+                                  <span className="font-medium">
+                                    {policy.expiryDate}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </CollapsibleContent>
+                </Collapsible>
+              </Card>
+            </motion.div>
+          )}
 
           {/* CRITICAL: Emergency Contacts */}
           <motion.div variants={item}>
@@ -842,7 +991,7 @@ export default function MedicalProfilePage({
                       </p>
                     ) : (
                       <div className="space-y-3">
-                        {userContacts.map((contact: EmergencyContact) => (
+                        {userContacts.map((contact) => (
                           <div
                             key={contact.id}
                             className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-red-500/5 border-red-500/20"
@@ -852,7 +1001,7 @@ export default function MedicalProfilePage({
                                 <span className="font-semibold">
                                   {contact.name
                                     .split(" ")
-                                    .map((n: string) => n[0])
+                                    .map((n) => n[0])
                                     .join("")}
                                 </span>
                               </div>
@@ -930,7 +1079,7 @@ export default function MedicalProfilePage({
                         </Badge>
                       ) : (
                         <div className="flex flex-wrap gap-2">
-                          {allergies.map((allergy: string, idx: number) => (
+                          {allergies.map((allergy, idx) => (
                             <Badge
                               key={idx}
                               variant="destructive"
@@ -961,7 +1110,7 @@ export default function MedicalProfilePage({
                         </Badge>
                       ) : (
                         <div className="flex flex-wrap gap-2">
-                          {conditions.map((condition: string, idx: number) => (
+                          {conditions.map((condition, idx) => (
                             <Badge
                               key={idx}
                               variant="secondary"
@@ -1016,7 +1165,7 @@ export default function MedicalProfilePage({
                       </p>
                     ) : (
                       <div className="space-y-3">
-                        {userMedicines.map((med: Medicine) => (
+                        {userMedicines.map((med) => (
                           <div
                             key={med.id}
                             className="p-4 rounded-lg border bg-muted/30"
@@ -1048,18 +1197,16 @@ export default function MedicalProfilePage({
                                 </div>
                               </div>
                               <div className="flex flex-wrap gap-1 sm:justify-end">
-                                {med.timeToTake
-                                  .split(",")
-                                  .map((time: string, idx: number) => (
-                                    <Badge
-                                      key={idx}
-                                      variant="secondary"
-                                      className="text-xs"
-                                    >
-                                      <Clock className="h-3 w-3 mr-1" />
-                                      {time.trim()}
-                                    </Badge>
-                                  ))}
+                                {med.timeToTake.split(",").map((time, idx) => (
+                                  <Badge
+                                    key={idx}
+                                    variant="secondary"
+                                    className="text-xs"
+                                  >
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    {time.trim()}
+                                  </Badge>
+                                ))}
                               </div>
                             </div>
                           </div>
@@ -1109,7 +1256,7 @@ export default function MedicalProfilePage({
                       </p>
                     ) : (
                       <div className="space-y-3">
-                        {userDoctors.map((doc: Doctor) => (
+                        {userDoctors.map((doc) => (
                           <div
                             key={doc.id}
                             className="p-4 rounded-lg border bg-muted/30"
@@ -1205,7 +1352,7 @@ export default function MedicalProfilePage({
                       </p>
                     ) : (
                       <div className="space-y-3">
-                        {userPharmacies.map((pharm: Pharmacy) => (
+                        {userPharmacies.map((pharm) => (
                           <div
                             key={pharm.id}
                             className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-muted/30"
@@ -1281,7 +1428,7 @@ export default function MedicalProfilePage({
                   <CollapsibleContent>
                     <CardContent className="pt-0">
                       <div className="space-y-3">
-                        {personalContacts.map((contact: PersonalContact) => (
+                        {personalContacts.map((contact) => (
                           <div
                             key={contact.id}
                             className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-muted/30"
