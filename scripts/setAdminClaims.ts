@@ -1,4 +1,4 @@
-// scripts\setAdminClaims.ts
+// scripts\setAdminClaims.tss
 import admin from "firebase-admin";
 
 const serviceAccount = JSON.parse(
