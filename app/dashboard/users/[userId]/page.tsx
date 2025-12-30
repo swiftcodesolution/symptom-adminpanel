@@ -184,7 +184,7 @@ function getAnswerByKeyword(
   keyword: string
 ): string {
   const found = answers.find((a) =>
-    a.question.toLowerCase().includes(keyword.toLowerCase())
+    a.question?.toLowerCase()?.includes(keyword.toLowerCase())
   );
   return found?.answer || "";
 }
