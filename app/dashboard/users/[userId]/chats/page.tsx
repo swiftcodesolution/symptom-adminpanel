@@ -103,11 +103,18 @@ const item = {
 };
 
 // Helper to convert Firestore timestamp to Date
-function firestoreTimestampToDate(timestamp: {
+// function firestoreTimestampToDate(timestamp: {
+//   _seconds: number;
+//   _nanoseconds: number;
+// }): Date {
+//   return new Date(timestamp._seconds * 1000);
+// }
+function firestoreTimestampToDate(timestamp?: {
   _seconds: number;
   _nanoseconds: number;
 }): Date {
-  return new Date(timestamp._seconds * 1000);
+  if (!timestamp) return new Date(); // or throw, or return a sentinel date
+  return new Date(timestamp._seconds * 1000 + timestamp._nanoseconds / 1000000);
 }
 
 // Helper to extract topic from first AI message or user message

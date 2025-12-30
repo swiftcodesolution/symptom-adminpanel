@@ -51,22 +51,26 @@ interface UserOverviewProps {
   params: Promise<{ userId: string }>;
 }
 
+// Type for Firestore timestamp
+type FirestoreTimestamp = { _seconds: number; _nanoseconds: number };
+type TimestampField = FirestoreTimestamp | string | undefined | null;
+
 // Type definitions based on API response
 interface UserProfile {
   id: string;
   displayName: string;
   email: string;
-  emailVerified: boolean;
-  phoneNumber: string | null;
-  photoURL: string | null;
-  provider: string;
-  address: string | null;
-  createdAt: { _seconds: number; _nanoseconds: number };
-  lastLoginAt: { _seconds: number; _nanoseconds: number };
-  lastUpdated: string;
-  updatedAt: string;
+  emailVerified?: boolean;
+  phoneNumber?: string | null;
+  photoURL?: string | null;
+  provider?: string;
+  address?: string | null;
+  createdAt?: TimestampField;
+  lastLoginAt?: TimestampField;
+  lastUpdated?: string;
+  updatedAt?: string;
   answers: Array<{
-    question: string;
+    question?: string;
     answer: string;
     summarizedAnswer: string;
   }>;
@@ -81,8 +85,8 @@ interface Medicine {
   refillDate: string;
   date: string;
   daysOfWeek: number[];
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: TimestampField;
+  updatedAt?: TimestampField;
   notificationId?: string;
 }
 
@@ -91,39 +95,46 @@ interface EmergencyContact {
   name: string;
   relation: string;
   phone: string;
-  createdAt: { _seconds: number; _nanoseconds: number };
+  userId?: string;
+  createdAt?: TimestampField;
+  updatedAt?: TimestampField;
 }
 
 interface Insurance {
   id: string;
   companyName: string;
-  contactPersonName: string;
-  contactPersonNo: string;
+  contactPersonName?: string;
+  contactPersonNo?: string;
   policyNo: string;
-  issueDate: string;
+  issueDate?: string;
   expiryDate: string;
-  createdAt: { _seconds: number; _nanoseconds: number };
-  updatedAt: { _seconds: number; _nanoseconds: number };
+  userId?: string;
+  createdAt?: TimestampField;
+  updatedAt?: TimestampField;
 }
 
 interface Doctor {
   id: string;
   doctorName: string;
-  phoneNo: string;
-  email: string;
+  phoneNo?: string;
+  email?: string;
   isPrimary: boolean;
-  specialization: string;
-  createdAt: { _seconds: number; _nanoseconds: number };
+  specialization?: string;
+  userId?: string;
+  createdAt?: TimestampField;
+  updatedAt?: TimestampField;
 }
 
 interface Pharmacy {
   id: string;
   pharmacyName: string;
-  address: string;
-  phoneNo: string;
-  email: string;
-  services: string;
-  createdAt: { _seconds: number; _nanoseconds: number };
+  address?: string;
+  phoneNo?: string;
+  email?: string;
+  services?: string;
+  userId?: string;
+  createdAt?: TimestampField;
+  updatedAt?: TimestampField;
 }
 
 interface PersonalContact {
@@ -131,7 +142,9 @@ interface PersonalContact {
   Name: string;
   Relation: string;
   ContactNumber: string;
-  createdAt: { _seconds: number; _nanoseconds: number };
+  userId?: string;
+  createdAt?: TimestampField;
+  updatedAt?: TimestampField;
 }
 
 interface MedicalReport {
@@ -139,18 +152,18 @@ interface MedicalReport {
   name: string;
   type: string;
   url: string;
-  createdAt: string;
+  createdAt?: TimestampField;
 }
 
 interface UserPreferences {
-  lastUpdated: string;
-  medicationNotifications: boolean;
+  lastUpdated?: string;
+  medicationNotifications?: boolean;
 }
 
 interface UserData {
   profile: UserProfile;
   personalDetails: Record<string, unknown> | null;
-  insurance: Insurance[]; // Changed from Record<string, unknown> | null to Insurance[]
+  insurance: Insurance[];
   preferences: UserPreferences | null;
   medicines: Medicine[];
   medicalReports: MedicalReport[];
@@ -170,12 +183,34 @@ const item = {
   show: { opacity: 1, y: 0 },
 };
 
-// Helper function to convert Firestore timestamp to Date
-function firestoreTimestampToDate(timestamp: {
-  _seconds: number;
-  _nanoseconds: number;
-}): Date {
-  return new Date(timestamp._seconds * 1000);
+// Helper function to convert Firestore timestamp or ISO string to Date
+function toDate(timestamp: TimestampField): Date | null {
+  if (!timestamp) return null;
+
+  // If it's a Firestore timestamp object
+  if (typeof timestamp === "object" && "_seconds" in timestamp) {
+    return new Date(timestamp._seconds * 1000);
+  }
+
+  // If it's an ISO string
+  if (typeof timestamp === "string") {
+    const date = new Date(timestamp);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  return null;
+}
+
+// Helper to safely format a date
+function safeFormatDate(timestamp: TimestampField): string {
+  const date = toDate(timestamp);
+  return date ? formatDate(date.toISOString()) : "Unknown";
+}
+
+// Helper to safely get relative time
+function safeGetRelativeTime(timestamp: TimestampField): string {
+  const date = toDate(timestamp);
+  return date ? getRelativeTime(date.toISOString()) : "Unknown";
 }
 
 // Helper to get answer by question keyword
@@ -190,15 +225,25 @@ function getAnswerByKeyword(
 }
 
 // Helper to check if insurance is expired
-function isExpired(expiryDate: string): boolean {
-  const [day, month, year] = expiryDate.split("/").map(Number);
+function isExpired(expiryDate: string | undefined): boolean {
+  if (!expiryDate || expiryDate.toLowerCase() === "none") return false;
+
+  const parts = expiryDate.split(/[\/\-]/).map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return false;
+
+  const [day, month, year] = parts;
   const expiry = new Date(year, month - 1, day);
   return expiry < new Date();
 }
 
 // Helper to check if expiring soon (within 30 days)
-function isExpiringSoon(expiryDate: string): boolean {
-  const [day, month, year] = expiryDate.split("/").map(Number);
+function isExpiringSoon(expiryDate: string | undefined): boolean {
+  if (!expiryDate || expiryDate.toLowerCase() === "none") return false;
+
+  const parts = expiryDate.split(/[\/\-]/).map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return false;
+
+  const [day, month, year] = parts;
   const expiry = new Date(year, month - 1, day);
   const today = new Date();
   const diffDays = Math.ceil(
@@ -444,8 +489,6 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
     { label: "Recreational Drugs", value: usesRecreationalDrugs, icon: Pill },
   ];
 
-  // Get active insurance count
-  // const activeInsurance = insurance.filter((i) => !isExpired(i.expiryDate));
   const expiringInsurance = insurance.filter((i) =>
     isExpiringSoon(i.expiryDate)
   );
@@ -495,10 +538,16 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                 <h1 className="text-2xl md:text-3xl font-bold">
                   {profile.displayName}
                 </h1>
-                <Badge variant={profile.emailVerified ? "default" : "outline"}>
-                  {profile.emailVerified ? "Verified" : "Unverified"}
-                </Badge>
-                <Badge variant="secondary">{profile.provider}</Badge>
+                {profile.emailVerified !== undefined && (
+                  <Badge
+                    variant={profile.emailVerified ? "default" : "outline"}
+                  >
+                    {profile.emailVerified ? "Verified" : "Unverified"}
+                  </Badge>
+                )}
+                {profile.provider && (
+                  <Badge variant="secondary">{profile.provider}</Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground mt-1">
                 {gender && `${gender} • `}
@@ -507,15 +556,14 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="outline" className="h-8 px-3">
-              <Activity className="mr-2 h-3 w-3 text-green-500" />
-              <span className="text-xs">
-                Last login{" "}
-                {getRelativeTime(
-                  firestoreTimestampToDate(profile.lastLoginAt).toISOString()
-                )}
-              </span>
-            </Badge>
+            {toDate(profile.lastLoginAt) && (
+              <Badge variant="outline" className="h-8 px-3">
+                <Activity className="mr-2 h-3 w-3 text-green-500" />
+                <span className="text-xs">
+                  Last login {safeGetRelativeTime(profile.lastLoginAt)}
+                </span>
+              </Badge>
+            )}
             {preferences?.medicationNotifications && (
               <Badge variant="outline" className="h-8 px-3">
                 <Bell className="mr-2 h-3 w-3" />
@@ -588,11 +636,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                       <div>
                         <p className="text-xs text-muted-foreground">Joined</p>
                         <p className="text-sm font-medium">
-                          {formatDate(
-                            firestoreTimestampToDate(
-                              profile.createdAt
-                            ).toISOString()
-                          )}
+                          {safeFormatDate(profile.createdAt)}
                         </p>
                       </div>
                     </div>
@@ -988,7 +1032,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                       .map((qa, index) => (
                         <AccordionItem key={index} value={`item-${index}`}>
                           <AccordionTrigger className="text-sm text-left">
-                            {qa.question}
+                            {qa.question || `Question ${index + 1}`}
                           </AccordionTrigger>
                           <AccordionContent>
                             <div className="space-y-2">
@@ -1087,9 +1131,11 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                                   <p className="font-medium">
                                     {doctor.doctorName}
                                   </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {doctor.specialization}
-                                  </p>
+                                  {doctor.specialization && (
+                                    <p className="text-xs text-muted-foreground">
+                                      {doctor.specialization}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                               {doctor.isPrimary && (
@@ -1100,14 +1146,20 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                               )}
                             </div>
                             <div className="space-y-1 text-sm">
-                              <div className="flex items-center gap-2 text-muted-foreground">
-                                <Phone className="h-4 w-4" />
-                                <span>{doctor.phoneNo}</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-muted-foreground">
-                                <Mail className="h-4 w-4" />
-                                <span className="truncate">{doctor.email}</span>
-                              </div>
+                              {doctor.phoneNo && (
+                                <div className="flex items-center gap-2 text-muted-foreground">
+                                  <Phone className="h-4 w-4" />
+                                  <span>{doctor.phoneNo}</span>
+                                </div>
+                              )}
+                              {doctor.email && (
+                                <div className="flex items-center gap-2 text-muted-foreground">
+                                  <Mail className="h-4 w-4" />
+                                  <span className="truncate">
+                                    {doctor.email}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -1154,26 +1206,36 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                               <p className="font-medium">
                                 {pharmacy.pharmacyName}
                               </p>
-                              <p className="text-xs text-muted-foreground">
-                                {pharmacy.services}
-                              </p>
+                              {pharmacy.services && (
+                                <p className="text-xs text-muted-foreground">
+                                  {pharmacy.services}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <div className="space-y-1 text-sm">
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <MapPin className="h-4 w-4 shrink-0" />
-                              <span className="truncate">
-                                {pharmacy.address}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Phone className="h-4 w-4" />
-                              <span>{pharmacy.phoneNo}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Mail className="h-4 w-4" />
-                              <span className="truncate">{pharmacy.email}</span>
-                            </div>
+                            {pharmacy.address && (
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <MapPin className="h-4 w-4 shrink-0" />
+                                <span className="truncate">
+                                  {pharmacy.address}
+                                </span>
+                              </div>
+                            )}
+                            {pharmacy.phoneNo && (
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <Phone className="h-4 w-4" />
+                                <span>{pharmacy.phoneNo}</span>
+                              </div>
+                            )}
+                            {pharmacy.email && (
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <Mail className="h-4 w-4" />
+                                <span className="truncate">
+                                  {pharmacy.email}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1314,36 +1376,32 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/50">
-                      <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
-                        <User className="h-5 w-5 text-green-600" />
+                    {toDate(profile.createdAt) && (
+                      <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/50">
+                        <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                          <User className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">Account Created</p>
+                          <p className="text-xs text-muted-foreground">
+                            {safeFormatDate(profile.createdAt)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">Account Created</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDate(
-                            firestoreTimestampToDate(
-                              profile.createdAt
-                            ).toISOString()
-                          )}
-                        </p>
+                    )}
+                    {toDate(profile.lastLoginAt) && (
+                      <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/50">
+                        <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                          <Activity className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">Last Login</p>
+                          <p className="text-xs text-muted-foreground">
+                            {safeFormatDate(profile.lastLoginAt)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/50">
-                      <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-                        <Activity className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">Last Login</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDate(
-                            firestoreTimestampToDate(
-                              profile.lastLoginAt
-                            ).toISOString()
-                          )}
-                        </p>
-                      </div>
-                    </div>
+                    )}
                     {profile.lastUpdated && (
                       <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/50">
                         <div className="h-10 w-10 rounded-full bg-purple-500/10 flex items-center justify-center">
@@ -1391,7 +1449,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                               {report.name}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {report.type} • {formatDate(report.createdAt)}
+                              {report.type} • {safeFormatDate(report.createdAt)}
                             </p>
                           </div>
                           <Button variant="outline" size="sm" asChild>
