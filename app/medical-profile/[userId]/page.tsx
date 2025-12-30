@@ -41,7 +41,7 @@ import { formatDate } from "@/lib/utils";
 
 interface Answer {
   question?: string;
-  answer: string;
+  answer?: string;
   summarizedAnswer?: string;
 }
 
@@ -50,74 +50,74 @@ interface User {
   email?: string;
   phoneNumber?: string;
   address?: string;
-  uid: string;
+  uid?: string;
   answers?: Answer[];
   lastUpdated?: string;
 }
 
 interface Medicine {
-  id: string;
-  name: string;
-  dosage: string;
-  frequency: string;
-  timeToTake: string;
+  id?: string;
+  name?: string;
+  dosage?: string;
+  frequency?: string;
+  timeToTake?: string;
   refillDate?: string;
   notes?: string;
 }
 
 interface Doctor {
-  id: string;
-  doctorName: string;
-  specialization: string;
-  phoneNo: string;
+  id?: string;
+  doctorName?: string;
+  specialization?: string;
+  phoneNo?: string;
   email?: string;
   isPrimary?: boolean;
 }
 
 interface EmergencyContact {
-  id: string;
-  name: string;
-  relation: string;
-  phone: string;
+  id?: string;
+  name?: string;
+  relation?: string;
+  phone?: string;
 }
 
 interface PersonalContact {
-  id: string;
-  Name: string;
-  Relation: string;
-  ContactNumber: string;
+  id?: string;
+  Name?: string;
+  Relation?: string;
+  ContactNumber?: string;
 }
 
 interface Pharmacy {
-  id: string;
-  pharmacyName: string;
-  address: string;
-  phoneNo: string;
+  id?: string;
+  pharmacyName?: string;
+  address?: string;
+  phoneNo?: string;
   email?: string;
   services?: string;
 }
 
 interface InsurancePolicy {
-  id: string;
-  companyName: string;
-  policyNo: string;
-  contactPersonName: string;
-  contactPersonNo: string;
-  issueDate: string;
-  expiryDate: string;
+  id?: string;
+  companyName?: string;
+  policyNo?: string;
+  contactPersonName?: string;
+  contactPersonNo?: string;
+  issueDate?: string;
+  expiryDate?: string;
 }
 
 interface ApiData {
-  user: User;
-  personalDetails: any | null;
-  insurance: InsurancePolicy[];
-  userPreferences: any | null;
-  medicines: Medicine[];
-  emergencyContacts: EmergencyContact[];
-  doctors: Doctor[];
-  pharmacies: Pharmacy[];
-  medicalReports: any[];
-  personalContacts: PersonalContact[];
+  user?: User;
+  personalDetails?: any | null;
+  insurance?: InsurancePolicy[];
+  userPreferences?: any | null;
+  medicines?: Medicine[];
+  emergencyContacts?: EmergencyContact[];
+  doctors?: Doctor[];
+  pharmacies?: Pharmacy[];
+  medicalReports?: any[];
+  personalContacts?: PersonalContact[];
 }
 
 interface MedicalProfilePageProps {
@@ -134,16 +134,94 @@ const item = {
   show: { opacity: 1, y: 0 },
 };
 
+// Safe string helper - ensures we always return a string
+const safeString = (
+  value: string | undefined | null,
+  fallback: string = "N/A"
+): string => {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+  return String(value);
+};
+
+// Safe phone number formatter
+const safePhoneFormat = (phone: string | undefined | null): string => {
+  if (!phone) return "";
+  return phone.replace(/\D/g, "");
+};
+
 // Helper function to extract data from answers array
 const getAnswerByQuestion = (
-  answers: Answer[] | undefined,
+  answers: Answer[] | undefined | null,
   questionText: string
 ): string => {
-  if (!answers) return "Unknown";
+  if (!answers || !Array.isArray(answers)) return "Unknown";
   const answer = answers.find((a) =>
-    a.question?.toLowerCase().includes(questionText.toLowerCase())
+    a?.question?.toLowerCase()?.includes(questionText.toLowerCase())
   );
-  return answer?.answer || "Unknown";
+  return safeString(answer?.answer, "Unknown");
+};
+
+// Helper function to get allergies from answers
+const getAllergies = (answers: Answer[] | undefined | null): string[] => {
+  if (!answers || !Array.isArray(answers)) return [];
+  const hasAllergies = answers.find(
+    (a) =>
+      a?.question?.toLowerCase()?.includes("known allergies") &&
+      a?.answer?.toLowerCase() === "yes"
+  );
+  if (!hasAllergies) return [];
+
+  const allergyDetails = answers.find((a) =>
+    a?.question?.toLowerCase()?.includes("explain your allergies")
+  );
+
+  if (allergyDetails?.answer && allergyDetails.answer.trim()) {
+    return allergyDetails.answer
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+  }
+  return ["Not specified"];
+};
+
+// Helper function to get conditions from answers
+const getConditions = (answers: Answer[] | undefined | null): string[] => {
+  if (!answers || !Array.isArray(answers)) return [];
+  const conditions: string[] = [];
+
+  const conditionQuestions = [
+    { key: "high blood pressure", label: "High Blood Pressure" },
+    { key: "diabetes", label: "Diabetes" },
+    { key: "heart disease", label: "Heart Disease" },
+  ];
+
+  conditionQuestions.forEach(({ key, label }) => {
+    const hasCondition = answers.find(
+      (a) =>
+        a?.question?.toLowerCase()?.includes(key) &&
+        a?.answer?.toLowerCase() === "yes"
+    );
+    if (hasCondition) {
+      conditions.push(label);
+    }
+  });
+
+  return conditions;
+};
+
+// Helper to get initials safely
+const getInitials = (name: string | undefined | null): string => {
+  if (!name) return "??";
+  return (
+    name
+      .split(" ")
+      .map((n) => n?.[0] || "")
+      .filter(Boolean)
+      .join("")
+      .toUpperCase() || "??"
+  );
 };
 
 export default function MedicalProfilePage({
@@ -188,7 +266,7 @@ export default function MedicalProfilePage({
   };
 
   const handleShare = async () => {
-    const userName = data?.user?.displayName || "User";
+    const userName = safeString(data?.user?.displayName, "User");
     if (navigator.share) {
       try {
         await navigator.share({
@@ -224,12 +302,12 @@ export default function MedicalProfilePage({
       const textColor: [number, number, number] = [15, 23, 42];
       const lightBg: [number, number, number] = [248, 250, 252];
 
-      const userName = data.user.displayName || "Unknown User";
-      const userDOB = getAnswerByQuestion(data.user.answers, "date of birth");
-      const userHeight = getAnswerByQuestion(data.user.answers, "height");
-      const userWeight = getAnswerByQuestion(data.user.answers, "weight");
-      const allergies = getAllergies(data.user.answers);
-      const conditions = getConditions(data.user.answers);
+      const userName = safeString(data.user?.displayName, "Unknown User");
+      const userDOB = getAnswerByQuestion(data.user?.answers, "date of birth");
+      const userHeight = getAnswerByQuestion(data.user?.answers, "height");
+      const userWeight = getAnswerByQuestion(data.user?.answers, "weight");
+      const allergies = getAllergies(data.user?.answers);
+      const conditions = getConditions(data.user?.answers);
 
       const userMedicines = data.medicines || [];
       const userContacts = data.emergencyContacts || [];
@@ -335,7 +413,7 @@ export default function MedicalProfilePage({
       pdf.setTextColor(...secondaryColor);
       pdf.text("Phone:", margin + 70, yPos + 18);
       pdf.setTextColor(...textColor);
-      pdf.text(data.user.phoneNumber || "N/A", margin + 88, yPos + 18);
+      pdf.text(safeString(data.user?.phoneNumber), margin + 88, yPos + 18);
 
       // Row 2
       pdf.setTextColor(...secondaryColor);
@@ -351,7 +429,7 @@ export default function MedicalProfilePage({
       pdf.setTextColor(...secondaryColor);
       pdf.text("Email:", margin + 100, yPos + 26);
       pdf.setTextColor(...textColor);
-      pdf.text(data.user.email || "N/A", margin + 116, yPos + 26);
+      pdf.text(safeString(data.user?.email), margin + 116, yPos + 26);
 
       yPos += 42;
 
@@ -361,6 +439,7 @@ export default function MedicalProfilePage({
         drawText("No emergency contacts listed", { color: secondaryColor });
       } else {
         userContacts.forEach((contact) => {
+          if (!contact) return;
           addNewPageIfNeeded(18);
 
           pdf.setFillColor(254, 242, 242);
@@ -369,16 +448,20 @@ export default function MedicalProfilePage({
           pdf.setFontSize(11);
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(...textColor);
-          pdf.text(contact.name, margin + 3, yPos + 5);
+          pdf.text(safeString(contact.name, "Unknown"), margin + 3, yPos + 5);
 
           pdf.setFontSize(9);
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(...secondaryColor);
-          pdf.text(contact.relation, margin + 3, yPos + 10);
+          pdf.text(safeString(contact.relation), margin + 3, yPos + 10);
 
           pdf.setTextColor(...primaryColor);
           pdf.setFont("helvetica", "bold");
-          pdf.text(contact.phone, pageWidth - margin - 40, yPos + 7);
+          pdf.text(
+            safeString(contact.phone),
+            pageWidth - margin - 40,
+            yPos + 7
+          );
 
           yPos += 16;
         });
@@ -398,6 +481,7 @@ export default function MedicalProfilePage({
         drawText("No known allergies", { color: [22, 163, 74], indent: 3 });
       } else {
         allergies.forEach((allergy) => {
+          if (!allergy) return;
           addNewPageIfNeeded(8);
           pdf.setFillColor(254, 226, 226);
           pdf.roundedRect(
@@ -429,6 +513,7 @@ export default function MedicalProfilePage({
         drawText("No known conditions", { color: [22, 163, 74], indent: 3 });
       } else {
         conditions.forEach((condition) => {
+          if (!condition) return;
           addNewPageIfNeeded(8);
           pdf.setFillColor(241, 245, 249);
           pdf.roundedRect(
@@ -455,6 +540,7 @@ export default function MedicalProfilePage({
         drawSectionHeader("🛡️ INSURANCE INFORMATION", [59, 130, 246]);
 
         userInsurance.forEach((policy) => {
+          if (!policy) return;
           addNewPageIfNeeded(28);
 
           pdf.setFillColor(...lightBg);
@@ -463,19 +549,31 @@ export default function MedicalProfilePage({
           pdf.setFontSize(10);
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(...textColor);
-          pdf.text(policy.companyName, margin + 3, yPos + 4);
+          pdf.text(
+            safeString(policy.companyName, "Unknown Company"),
+            margin + 3,
+            yPos + 4
+          );
 
           pdf.setFontSize(9);
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(...secondaryColor);
-          pdf.text(`Policy No: ${policy.policyNo}`, margin + 3, yPos + 10);
           pdf.text(
-            `Contact: ${policy.contactPersonName} - ${policy.contactPersonNo}`,
+            `Policy No: ${safeString(policy.policyNo)}`,
+            margin + 3,
+            yPos + 10
+          );
+          pdf.text(
+            `Contact: ${safeString(policy.contactPersonName)} - ${safeString(
+              policy.contactPersonNo
+            )}`,
             margin + 3,
             yPos + 15
           );
           pdf.text(
-            `Issue: ${policy.issueDate} | Expiry: ${policy.expiryDate}`,
+            `Issue: ${safeString(policy.issueDate)} | Expiry: ${safeString(
+              policy.expiryDate
+            )}`,
             margin + 3,
             yPos + 20
           );
@@ -492,6 +590,7 @@ export default function MedicalProfilePage({
         drawText("No current medications", { color: secondaryColor });
       } else {
         userMedicines.forEach((med) => {
+          if (!med) return;
           addNewPageIfNeeded(22);
 
           pdf.setFillColor(...lightBg);
@@ -500,18 +599,29 @@ export default function MedicalProfilePage({
           pdf.setFontSize(10);
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(...textColor);
-          pdf.text(med.name, margin + 3, yPos + 4);
+          pdf.text(
+            safeString(med.name, "Unknown Medication"),
+            margin + 3,
+            yPos + 4
+          );
 
           pdf.setFontSize(9);
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(...secondaryColor);
           pdf.text(
-            `${med.dosage} - ${med.frequency}x daily`,
+            `${safeString(med.dosage)} - ${safeString(
+              med.frequency,
+              "0"
+            )}x daily`,
             margin + 3,
             yPos + 10
           );
 
-          pdf.text(`Times: ${med.timeToTake}`, margin + 3, yPos + 15);
+          pdf.text(
+            `Times: ${safeString(med.timeToTake)}`,
+            margin + 3,
+            yPos + 15
+          );
 
           yPos += 20;
         });
@@ -524,6 +634,7 @@ export default function MedicalProfilePage({
         drawSectionHeader("👨‍⚕️ HEALTHCARE PROVIDERS", [34, 197, 94]);
 
         userDoctors.forEach((doc) => {
+          if (!doc) return;
           addNewPageIfNeeded(24);
 
           pdf.setFillColor(...lightBg);
@@ -532,16 +643,20 @@ export default function MedicalProfilePage({
           pdf.setFontSize(10);
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(...textColor);
-          pdf.text(doc.doctorName, margin + 3, yPos + 5);
+          pdf.text(
+            safeString(doc.doctorName, "Unknown Doctor"),
+            margin + 3,
+            yPos + 5
+          );
 
           pdf.setFontSize(9);
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(34, 197, 94);
-          pdf.text(doc.specialization, margin + 3, yPos + 11);
+          pdf.text(safeString(doc.specialization), margin + 3, yPos + 11);
 
           pdf.setTextColor(...secondaryColor);
           pdf.setFontSize(8);
-          pdf.text(`📞 ${doc.phoneNo}`, margin + 3, yPos + 17);
+          pdf.text(`📞 ${safeString(doc.phoneNo)}`, margin + 3, yPos + 17);
 
           if (doc.email) {
             pdf.text(`✉️ ${doc.email}`, margin + 50, yPos + 17);
@@ -558,6 +673,7 @@ export default function MedicalProfilePage({
         drawSectionHeader("🏪 PHARMACIES", [168, 85, 247]);
 
         userPharmacies.forEach((pharm) => {
+          if (!pharm) return;
           addNewPageIfNeeded(20);
 
           pdf.setFillColor(...lightBg);
@@ -566,13 +682,17 @@ export default function MedicalProfilePage({
           pdf.setFontSize(10);
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(...textColor);
-          pdf.text(pharm.pharmacyName, margin + 3, yPos + 5);
+          pdf.text(
+            safeString(pharm.pharmacyName, "Unknown Pharmacy"),
+            margin + 3,
+            yPos + 5
+          );
 
           pdf.setFontSize(8);
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(...secondaryColor);
-          pdf.text(`📍 ${pharm.address}`, margin + 3, yPos + 10);
-          pdf.text(`📞 ${pharm.phoneNo}`, margin + 3, yPos + 14);
+          pdf.text(`📍 ${safeString(pharm.address)}`, margin + 3, yPos + 10);
+          pdf.text(`📞 ${safeString(pharm.phoneNo)}`, margin + 3, yPos + 14);
 
           yPos += 19;
         });
@@ -604,7 +724,7 @@ export default function MedicalProfilePage({
       );
       pdf.text(
         `Last Updated: ${formatDate(
-          data.user.lastUpdated || new Date().toISOString()
+          data.user?.lastUpdated || new Date().toISOString()
         )}`,
         pageWidth - margin - 60,
         footerY + 4
@@ -660,66 +780,14 @@ export default function MedicalProfilePage({
 
   // Extract data with defaults
   const user = data.user;
-  const userName = user.displayName || "Unknown User";
-  const userInitials =
-    userName
-      .split(" ")
-      .map((n: string) => n[0] || "")
-      .join("") || "??";
+  const userName = safeString(user.displayName, "Unknown User");
+  const userInitials = getInitials(user.displayName);
 
   // Extract info from answers array
   const userDOB = getAnswerByQuestion(user.answers, "date of birth");
   const userGender = getAnswerByQuestion(user.answers, "gender");
   const userHeight = getAnswerByQuestion(user.answers, "height");
   const userWeight = getAnswerByQuestion(user.answers, "weight");
-
-  // Helper function to get allergies from answers
-  const getAllergies = (answers: Answer[] | undefined): string[] => {
-    if (!answers) return [];
-    const hasAllergies = answers.find(
-      (a) =>
-        a.question?.toLowerCase().includes("known allergies") &&
-        a.answer?.toLowerCase() === "yes"
-    );
-    if (!hasAllergies) return [];
-
-    const allergyDetails = answers.find((a) =>
-      a.question?.toLowerCase().includes("explain your allergies")
-    );
-
-    if (allergyDetails?.answer && allergyDetails.answer.trim()) {
-      return allergyDetails.answer
-        .split(",")
-        .map((a) => a.trim())
-        .filter(Boolean);
-    }
-    return ["Not specified"];
-  };
-
-  // Helper function to get conditions from answers
-  const getConditions = (answers: Answer[] | undefined): string[] => {
-    if (!answers) return [];
-    const conditions: string[] = [];
-
-    const conditionQuestions = [
-      { key: "high blood pressure", label: "High Blood Pressure" },
-      { key: "diabetes", label: "Diabetes" },
-      { key: "heart disease", label: "Heart Disease" },
-    ];
-
-    conditionQuestions.forEach(({ key, label }) => {
-      const hasCondition = answers.find(
-        (a) =>
-          a.question?.toLowerCase().includes(key) &&
-          a.answer?.toLowerCase() === "yes"
-      );
-      if (hasCondition) {
-        conditions.push(label);
-      }
-    });
-
-    return conditions;
-  };
 
   const allergies = getAllergies(user.answers);
   const conditions = getConditions(user.answers);
@@ -898,53 +966,59 @@ export default function MedicalProfilePage({
                   <CollapsibleContent>
                     <CardContent className="pt-0">
                       <div className="space-y-3">
-                        {userInsurance.map((policy) => (
-                          <div
-                            key={policy.id}
-                            className="p-4 rounded-lg border bg-muted/30"
-                          >
-                            <div className="space-y-2">
-                              <p className="font-semibold text-lg">
-                                {policy.companyName}
-                              </p>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                                <div>
-                                  <span className="text-muted-foreground">
-                                    Policy No:
-                                  </span>{" "}
-                                  <span className="font-medium">
-                                    {policy.policyNo}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">
-                                    Contact:
-                                  </span>{" "}
-                                  <span className="font-medium">
-                                    {policy.contactPersonName} (
-                                    {policy.contactPersonNo})
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">
-                                    Issue Date:
-                                  </span>{" "}
-                                  <span className="font-medium">
-                                    {policy.issueDate}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">
-                                    Expiry Date:
-                                  </span>{" "}
-                                  <span className="font-medium">
-                                    {policy.expiryDate}
-                                  </span>
+                        {userInsurance.map((policy, index) => {
+                          if (!policy) return null;
+                          return (
+                            <div
+                              key={policy.id || index}
+                              className="p-4 rounded-lg border bg-muted/30"
+                            >
+                              <div className="space-y-2">
+                                <p className="font-semibold text-lg">
+                                  {safeString(
+                                    policy.companyName,
+                                    "Unknown Company"
+                                  )}
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">
+                                      Policy No:
+                                    </span>{" "}
+                                    <span className="font-medium">
+                                      {safeString(policy.policyNo)}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">
+                                      Contact:
+                                    </span>{" "}
+                                    <span className="font-medium">
+                                      {safeString(policy.contactPersonName)} (
+                                      {safeString(policy.contactPersonNo)})
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">
+                                      Issue Date:
+                                    </span>{" "}
+                                    <span className="font-medium">
+                                      {safeString(policy.issueDate)}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">
+                                      Expiry Date:
+                                    </span>{" "}
+                                    <span className="font-medium">
+                                      {safeString(policy.expiryDate)}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </CardContent>
                   </CollapsibleContent>
@@ -991,38 +1065,45 @@ export default function MedicalProfilePage({
                       </p>
                     ) : (
                       <div className="space-y-3">
-                        {userContacts.map((contact) => (
-                          <div
-                            key={contact.id}
-                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-red-500/5 border-red-500/20"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="h-12 w-12 rounded-full bg-red-500 text-white flex items-center justify-center shrink-0">
-                                <span className="font-semibold">
-                                  {contact.name
-                                    .split(" ")
-                                    .map((n) => n[0])
-                                    .join("")}
-                                </span>
-                              </div>
-                              <div>
-                                <p className="font-semibold flex items-center gap-2">
-                                  {contact.name}
-                                </p>
-                                <p className="text-sm text-muted-foreground capitalize">
-                                  {contact.relation}
-                                </p>
-                              </div>
-                            </div>
-                            <a
-                              href={`tel:${contact.phone.replace(/\D/g, "")}`}
-                              className="flex items-center justify-center gap-2 px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium"
+                        {userContacts.map((contact, index) => {
+                          if (!contact) return null;
+                          const contactName = safeString(
+                            contact.name,
+                            "Unknown"
+                          );
+                          const contactPhone = safeString(contact.phone, "");
+                          return (
+                            <div
+                              key={contact.id || index}
+                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-red-500/5 border-red-500/20"
                             >
-                              <Phone className="h-4 w-4" />
-                              <span>{contact.phone}</span>
-                            </a>
-                          </div>
-                        ))}
+                              <div className="flex items-center gap-3">
+                                <div className="h-12 w-12 rounded-full bg-red-500 text-white flex items-center justify-center shrink-0">
+                                  <span className="font-semibold">
+                                    {getInitials(contact.name)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <p className="font-semibold flex items-center gap-2">
+                                    {contactName}
+                                  </p>
+                                  <p className="text-sm text-muted-foreground capitalize">
+                                    {safeString(contact.relation)}
+                                  </p>
+                                </div>
+                              </div>
+                              {contactPhone && (
+                                <a
+                                  href={`tel:${safePhoneFormat(contactPhone)}`}
+                                  className="flex items-center justify-center gap-2 px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium"
+                                >
+                                  <Phone className="h-4 w-4" />
+                                  <span>{contactPhone}</span>
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </CardContent>
@@ -1165,52 +1246,66 @@ export default function MedicalProfilePage({
                       </p>
                     ) : (
                       <div className="space-y-3">
-                        {userMedicines.map((med) => (
-                          <div
-                            key={med.id}
-                            className="p-4 rounded-lg border bg-muted/30"
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                              <div className="flex items-start gap-3">
-                                <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0 mt-0.5">
-                                  <Pill className="h-5 w-5 text-purple-500" />
-                                </div>
-                                <div>
-                                  <p className="font-semibold">{med.name}</p>
-                                  <div className="flex flex-wrap items-center gap-2 mt-1">
-                                    <Badge
-                                      variant="outline"
-                                      className="font-mono"
-                                    >
-                                      {med.dosage}
-                                    </Badge>
-                                    <span className="text-sm text-muted-foreground">
-                                      {med.frequency}x daily
-                                    </span>
+                        {userMedicines.map((med, index) => {
+                          if (!med) return null;
+                          const timeToTake = safeString(med.timeToTake, "");
+                          const times = timeToTake
+                            ? timeToTake.split(",").filter(Boolean)
+                            : [];
+                          return (
+                            <div
+                              key={med.id || index}
+                              className="p-4 rounded-lg border bg-muted/30"
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                  <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                                    <Pill className="h-5 w-5 text-purple-500" />
                                   </div>
-                                  {med.refillDate && (
-                                    <p className="text-sm text-muted-foreground mt-2 flex items-start gap-1">
-                                      <Calendar className="h-3 w-3 mt-0.5 shrink-0" />
-                                      Refill: {med.refillDate}
+                                  <div>
+                                    <p className="font-semibold">
+                                      {safeString(
+                                        med.name,
+                                        "Unknown Medication"
+                                      )}
                                     </p>
-                                  )}
+                                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                                      <Badge
+                                        variant="outline"
+                                        className="font-mono"
+                                      >
+                                        {safeString(med.dosage)}
+                                      </Badge>
+                                      <span className="text-sm text-muted-foreground">
+                                        {safeString(med.frequency, "0")}x daily
+                                      </span>
+                                    </div>
+                                    {med.refillDate && (
+                                      <p className="text-sm text-muted-foreground mt-2 flex items-start gap-1">
+                                        <Calendar className="h-3 w-3 mt-0.5 shrink-0" />
+                                        Refill: {med.refillDate}
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="flex flex-wrap gap-1 sm:justify-end">
-                                {med.timeToTake.split(",").map((time, idx) => (
-                                  <Badge
-                                    key={idx}
-                                    variant="secondary"
-                                    className="text-xs"
-                                  >
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    {time.trim()}
-                                  </Badge>
-                                ))}
+                                {times.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 sm:justify-end">
+                                    {times.map((time, idx) => (
+                                      <Badge
+                                        key={idx}
+                                        variant="secondary"
+                                        className="text-xs"
+                                      >
+                                        <Clock className="h-3 w-3 mr-1" />
+                                        {time.trim()}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </CardContent>
@@ -1256,57 +1351,68 @@ export default function MedicalProfilePage({
                       </p>
                     ) : (
                       <div className="space-y-3">
-                        {userDoctors.map((doc) => (
-                          <div
-                            key={doc.id}
-                            className="p-4 rounded-lg border bg-muted/30"
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                              <div className="flex items-start gap-3">
-                                <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
-                                  <Stethoscope className="h-5 w-5 text-green-500" />
-                                </div>
-                                <div>
-                                  <p className="font-semibold flex items-center gap-2">
-                                    {doc.doctorName}
-                                    {doc.isPrimary && (
-                                      <Badge
-                                        variant="default"
-                                        className="text-xs"
-                                      >
-                                        Primary
-                                      </Badge>
-                                    )}
-                                  </p>
-                                  <Badge variant="outline" className="mt-1">
-                                    {doc.specialization}
-                                  </Badge>
-                                  <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-                                    <p className="flex items-center gap-2">
-                                      <Phone className="h-3 w-3 shrink-0" />
-                                      {doc.phoneNo}
+                        {userDoctors.map((doc, index) => {
+                          if (!doc) return null;
+                          const docPhone = safeString(doc.phoneNo, "");
+                          return (
+                            <div
+                              key={doc.id || index}
+                              className="p-4 rounded-lg border bg-muted/30"
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                  <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
+                                    <Stethoscope className="h-5 w-5 text-green-500" />
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold flex items-center gap-2">
+                                      {safeString(
+                                        doc.doctorName,
+                                        "Unknown Doctor"
+                                      )}
+                                      {doc.isPrimary && (
+                                        <Badge
+                                          variant="default"
+                                          className="text-xs"
+                                        >
+                                          Primary
+                                        </Badge>
+                                      )}
                                     </p>
-                                    {doc.email && (
-                                      <p className="flex items-center gap-2">
-                                        <Mail className="h-3 w-3 shrink-0" />
-                                        {doc.email}
-                                      </p>
-                                    )}
+                                    <Badge variant="outline" className="mt-1">
+                                      {safeString(doc.specialization)}
+                                    </Badge>
+                                    <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                                      {docPhone && (
+                                        <p className="flex items-center gap-2">
+                                          <Phone className="h-3 w-3 shrink-0" />
+                                          {docPhone}
+                                        </p>
+                                      )}
+                                      {doc.email && (
+                                        <p className="flex items-center gap-2">
+                                          <Mail className="h-3 w-3 shrink-0" />
+                                          {doc.email}
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
+                                {docPhone && (
+                                  <a
+                                    href={`tel:${safePhoneFormat(docPhone)}`}
+                                    className="flex items-center justify-center gap-2 px-4 py-2 bg-green-500/10 text-green-600 rounded-lg hover:bg-green-500/20 transition-colors shrink-0"
+                                  >
+                                    <Phone className="h-4 w-4" />
+                                    <span className="text-sm font-medium">
+                                      Call
+                                    </span>
+                                  </a>
+                                )}
                               </div>
-                              <a
-                                href={`tel:${doc.phoneNo.replace(/\D/g, "")}`}
-                                className="flex items-center justify-center gap-2 px-4 py-2 bg-green-500/10 text-green-600 rounded-lg hover:bg-green-500/20 transition-colors shrink-0"
-                              >
-                                <Phone className="h-4 w-4" />
-                                <span className="text-sm font-medium">
-                                  Call
-                                </span>
-                              </a>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </CardContent>
@@ -1352,41 +1458,52 @@ export default function MedicalProfilePage({
                       </p>
                     ) : (
                       <div className="space-y-3">
-                        {userPharmacies.map((pharm) => (
-                          <div
-                            key={pharm.id}
-                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-muted/30"
-                          >
-                            <div className="flex items-start gap-3">
-                              <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
-                                <Building2 className="h-5 w-5 text-purple-500" />
-                              </div>
-                              <div>
-                                <p className="font-semibold">
-                                  {pharm.pharmacyName}
-                                </p>
-                                <p className="text-sm text-muted-foreground flex items-start gap-1 mt-1">
-                                  <MapPin className="h-3 w-3 mt-0.5 shrink-0" />
-                                  {pharm.address}
-                                </p>
-                                {pharm.services && (
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                    Services: {pharm.services}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            <a
-                              href={`tel:${pharm.phoneNo.replace(/\D/g, "")}`}
-                              className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-500/10 text-purple-600 rounded-lg hover:bg-purple-500/20 transition-colors"
+                        {userPharmacies.map((pharm, index) => {
+                          if (!pharm) return null;
+                          const pharmPhone = safeString(pharm.phoneNo, "");
+                          return (
+                            <div
+                              key={pharm.id || index}
+                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-muted/30"
                             >
-                              <Phone className="h-4 w-4" />
-                              <span className="text-sm font-medium">
-                                {pharm.phoneNo}
-                              </span>
-                            </a>
-                          </div>
-                        ))}
+                              <div className="flex items-start gap-3">
+                                <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
+                                  <Building2 className="h-5 w-5 text-purple-500" />
+                                </div>
+                                <div>
+                                  <p className="font-semibold">
+                                    {safeString(
+                                      pharm.pharmacyName,
+                                      "Unknown Pharmacy"
+                                    )}
+                                  </p>
+                                  {pharm.address && (
+                                    <p className="text-sm text-muted-foreground flex items-start gap-1 mt-1">
+                                      <MapPin className="h-3 w-3 mt-0.5 shrink-0" />
+                                      {pharm.address}
+                                    </p>
+                                  )}
+                                  {pharm.services && (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      Services: {pharm.services}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              {pharmPhone && (
+                                <a
+                                  href={`tel:${safePhoneFormat(pharmPhone)}`}
+                                  className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-500/10 text-purple-600 rounded-lg hover:bg-purple-500/20 transition-colors"
+                                >
+                                  <Phone className="h-4 w-4" />
+                                  <span className="text-sm font-medium">
+                                    {pharmPhone}
+                                  </span>
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </CardContent>
@@ -1428,36 +1545,44 @@ export default function MedicalProfilePage({
                   <CollapsibleContent>
                     <CardContent className="pt-0">
                       <div className="space-y-3">
-                        {personalContacts.map((contact) => (
-                          <div
-                            key={contact.id}
-                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-muted/30"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
-                                <Users className="h-5 w-5 text-blue-500" />
-                              </div>
-                              <div>
-                                <p className="font-semibold">{contact.Name}</p>
-                                <p className="text-sm text-muted-foreground capitalize">
-                                  {contact.Relation}
-                                </p>
-                              </div>
-                            </div>
-                            <a
-                              href={`tel:${contact.ContactNumber.replace(
-                                /\D/g,
-                                ""
-                              )}`}
-                              className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-500/10 text-blue-600 rounded-lg hover:bg-blue-500/20 transition-colors"
+                        {personalContacts.map((contact, index) => {
+                          if (!contact) return null;
+                          const contactPhone = safeString(
+                            contact.ContactNumber,
+                            ""
+                          );
+                          return (
+                            <div
+                              key={contact.id || index}
+                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-muted/30"
                             >
-                              <Phone className="h-4 w-4" />
-                              <span className="text-sm font-medium">
-                                {contact.ContactNumber}
-                              </span>
-                            </a>
-                          </div>
-                        ))}
+                              <div className="flex items-center gap-3">
+                                <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+                                  <Users className="h-5 w-5 text-blue-500" />
+                                </div>
+                                <div>
+                                  <p className="font-semibold">
+                                    {safeString(contact.Name, "Unknown")}
+                                  </p>
+                                  <p className="text-sm text-muted-foreground capitalize">
+                                    {safeString(contact.Relation)}
+                                  </p>
+                                </div>
+                              </div>
+                              {contactPhone && (
+                                <a
+                                  href={`tel:${safePhoneFormat(contactPhone)}`}
+                                  className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-500/10 text-blue-600 rounded-lg hover:bg-blue-500/20 transition-colors"
+                                >
+                                  <Phone className="h-4 w-4" />
+                                  <span className="text-sm font-medium">
+                                    {contactPhone}
+                                  </span>
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </CardContent>
                   </CollapsibleContent>
