@@ -21,6 +21,7 @@ import {
   Building2,
   User2,
   Loader2,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -98,6 +99,11 @@ const userMenuItems = [
     name: "Emergency Info",
     href: "/emergency",
     icon: AlertTriangle,
+  },
+  {
+    name: "Settings",
+    href: "/settings",
+    icon: Settings,
   },
 ];
 

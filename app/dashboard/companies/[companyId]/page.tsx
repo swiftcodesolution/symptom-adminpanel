@@ -989,6 +989,7 @@ export default function CompanyDetailPage({
                   Company Portal Access
                 </CardTitle>
               </CardHeader>
+
               <CardContent className="space-y-4">
                 <div className="p-3 rounded-lg bg-muted/50 space-y-3">
                   <div>
@@ -998,8 +999,8 @@ export default function CompanyDetailPage({
                     <div className="flex items-center gap-2">
                       <code className="text-xs bg-background px-2 py-1 rounded border flex-1 truncate">
                         {typeof window !== "undefined"
-                          ? `${window.location.origin}/company/${companyId}`
-                          : `/company/${companyId}`}
+                          ? `${window.location.origin}/panel/company/${companyId}`
+                          : `/panel/company/${companyId}`}
                       </code>
                       <Button
                         variant="ghost"
@@ -1007,7 +1008,7 @@ export default function CompanyDetailPage({
                         className="h-7 w-7"
                         onClick={() =>
                           handleCopyCredential(
-                            `${window.location.origin}/company/${companyId}`,
+                            `${window.location.origin}/panel/company/${companyId}`,
                             "url"
                           )
                         }
@@ -1020,6 +1021,7 @@ export default function CompanyDetailPage({
                       </Button>
                     </div>
                   </div>
+
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">
                       Admin Username
@@ -1050,6 +1052,7 @@ export default function CompanyDetailPage({
                     </div>
                   </div>
                 </div>
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -1059,6 +1062,7 @@ export default function CompanyDetailPage({
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Reset Admin Password
                 </Button>
+
                 <Link
                   href={`/company/${companyId}`}
                   target="_blank"
