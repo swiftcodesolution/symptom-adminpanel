@@ -62,7 +62,7 @@ export default function SubscribePage() {
         setLoading(true);
 
         // Fetch plans from Stripe
-        const plansRes = await fetch("/api/stripe/plans");
+        const plansRes = await fetch("/panel/api/stripe/plans");
         if (plansRes.ok) {
           const data = await plansRes.json();
           setPlans(data.plans);
@@ -87,7 +87,7 @@ export default function SubscribePage() {
     try {
       setCheckoutLoading(priceId);
 
-      const response = await fetch("/api/stripe/checkout", {
+      const response = await fetch("/panel/api/stripe/checkout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -122,7 +122,7 @@ export default function SubscribePage() {
     try {
       setPortalLoading(true);
 
-      const response = await fetch("/api/stripe/portal", {
+      const response = await fetch("/panel/api/stripe/portal", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
