@@ -1,3 +1,4 @@
+// app\api\admin\subscription-plans\route.ts
 import { db } from "@/lib/firebaseAdmin.mjs";
 import { requireAdmin } from "@/lib/authAdmin";
 import { NextRequest, NextResponse } from "next/server";
