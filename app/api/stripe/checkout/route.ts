@@ -12,6 +12,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { userId, priceId, userEmail, userName } = body;
 
+    console.log("Request body:", { userId, priceId, userEmail, userName });
+
     // Validation
     if (!userId || !priceId) {
       return NextResponse.json(
@@ -19,8 +21,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    console.log("Creating checkout for:", { userId, priceId, userEmail });
 
     // Check if user exists in Firebase
     const userDoc = await db.collection("users").doc(userId).get();
@@ -30,21 +30,31 @@ export async function POST(request: NextRequest) {
 
     const userData = userDoc.data();
     const email = userEmail || userData?.email;
+    const name = userName || userData?.name || userData?.displayName;
+
+    console.log("User data:", { email, name });
 
     // Check if user already has a Stripe customer ID
     let customerId = userData?.subscription?.stripeCustomerId;
 
     if (!customerId) {
       // Create a new Stripe customer
+      console.log("Creating new Stripe customer...");
       const customer = await stripe.customers.create({
         email: email,
-        name: userName || userData?.name || userData?.displayName,
+        name: name,
         metadata: {
           firebaseUserId: userId,
         },
       });
       customerId = customer.id;
       console.log("Created new Stripe customer:", customerId);
+
+      // Save the customer ID immediately
+      await db.collection("users").doc(userId).update({
+        "subscription.stripeCustomerId": customerId,
+        "subscription.updatedAt": Date.now(),
+      });
     } else {
       console.log("Using existing Stripe customer:", customerId);
     }
@@ -65,36 +75,34 @@ export async function POST(request: NextRequest) {
       ],
       success_url: `${baseUrl}/subscribe/${userId}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/subscribe/${userId}/cancel`,
+      // IMPORTANT: Add metadata to the checkout session
       metadata: {
         firebaseUserId: userId,
       },
+      // IMPORTANT: Add metadata to the subscription that will be created
       subscription_data: {
         metadata: {
           firebaseUserId: userId,
         },
       },
-      // Optional: Allow promotion codes
+      // Optional settings
       allow_promotion_codes: true,
-      // Optional: Collect billing address
       billing_address_collection: "auto",
+      customer_update: {
+        address: "auto",
+        name: "auto",
+      },
     });
 
-    console.log("Checkout session created:", session.id);
-
-    // Store the customer ID in Firebase if it's new
-    if (!userData?.subscription?.stripeCustomerId) {
-      await db.collection("users").doc(userId).update({
-        "subscription.stripeCustomerId": customerId,
-        "subscription.updatedAt": Date.now(),
-      });
-    }
+    console.log("✅ Checkout session created:", session.id);
+    console.log("Session URL:", session.url);
 
     return NextResponse.json({
       sessionId: session.id,
       url: session.url,
     });
   } catch (error) {
-    console.error("Error creating checkout session:", error);
+    console.error("❌ Error creating checkout session:", error);
     return NextResponse.json(
       { error: "Failed to create checkout session" },
       { status: 500 }
