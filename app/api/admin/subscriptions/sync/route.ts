@@ -69,7 +69,6 @@ export async function POST(request: NextRequest) {
       customer: customerId,
       limit: 1,
       status: "all",
-      expand: ["data.items.data.price.product"],
     });
 
     if (subscriptions.data.length === 0) {
