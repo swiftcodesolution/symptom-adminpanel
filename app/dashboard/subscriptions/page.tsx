@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // app/dashboard/subscriptions/page.tsx
 "use client";
 
@@ -7,7 +8,6 @@ import Link from "next/link";
 import {
   Building2,
   Users,
-  TrendingUp,
   DollarSign,
   Search,
   Filter,
@@ -31,7 +31,12 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Plus,
+  Edit,
+  Trash2,
+  Package,
 } from "lucide-react";
+
 import {
   Card,
   CardContent,
@@ -42,8 +47,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -77,13 +85,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { useAuthFetch } from "@/lib/useAuthFetch";
 import Image from "next/image";
 
+// ────────────────────────────────────────────────
 // Animation variants
+// ────────────────────────────────────────────────
 const container = {
   hidden: { opacity: 0 },
   show: { opacity: 1, transition: { staggerChildren: 0.05 } },
@@ -94,7 +111,9 @@ const item = {
   show: { opacity: 1, y: 0 },
 };
 
-// Subscription status configuration
+// ────────────────────────────────────────────────
+// Status configurations
+// ────────────────────────────────────────────────
 const subscriptionStatusConfig: Record<
   string,
   {
@@ -170,7 +189,6 @@ const subscriptionStatusConfig: Record<
   },
 };
 
-// Company status configuration
 const companyStatusConfig: Record<
   string,
   {
@@ -184,7 +202,9 @@ const companyStatusConfig: Record<
   cancelled: { label: "Cancelled", variant: "secondary" },
 };
 
+// ────────────────────────────────────────────────
 // Interfaces
+// ────────────────────────────────────────────────
 interface StripePlan {
   priceId: string;
   productId: string;
@@ -197,6 +217,20 @@ interface StripePlan {
   features: string[];
   metadata: Record<string, string>;
   sortOrder: number;
+}
+
+interface B2BPlan {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  billingCycle: "monthly" | "yearly";
+  type: "b2b";
+  features: string[];
+  maxUsers: number;
+  isActive: boolean;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 interface B2CSubscriber {
@@ -257,7 +291,20 @@ interface SyncResult {
   }>;
 }
 
-// Plan icon mapping
+// ────────────────────────────────────────────────
+// Constants & Helpers
+// ────────────────────────────────────────────────
+const emptyB2BPlan: Omit<B2BPlan, "id" | "createdAt" | "updatedAt"> = {
+  name: "",
+  description: "",
+  price: 0,
+  billingCycle: "monthly",
+  type: "b2b",
+  features: [],
+  maxUsers: 10,
+  isActive: true,
+};
+
 const planIcons: Record<string, typeof Star> = {
   basic: Zap,
   starter: Zap,
@@ -267,6 +314,9 @@ const planIcons: Record<string, typeof Star> = {
   enterprise: Crown,
 };
 
+// ────────────────────────────────────────────────
+// Main Component
+// ────────────────────────────────────────────────
 export default function SubscriptionsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
@@ -275,9 +325,11 @@ export default function SubscriptionsPage() {
 
   // Data states
   const [stripePlans, setStripePlans] = useState<StripePlan[]>([]);
+  const [b2bPlans, setB2bPlans] = useState<B2BPlan[]>([]);
   const [b2cSubscribers, setB2cSubscribers] = useState<B2CSubscriber[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [stats, setStats] = useState<SubscriptionStats | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -288,44 +340,52 @@ export default function SubscriptionsPage() {
   const [syncResults, setSyncResults] = useState<SyncResult | null>(null);
   const [syncResultsDialogOpen, setSyncResultsDialogOpen] = useState(false);
 
+  // B2B Plan CRUD states
+  const [isB2BPlanDialogOpen, setIsB2BPlanDialogOpen] = useState(false);
+  const [editingB2BPlan, setEditingB2BPlan] = useState<B2BPlan | null>(null);
+  const [b2bPlanForm, setB2bPlanForm] = useState(emptyB2BPlan);
+  const [b2bFeaturesInput, setB2bFeaturesInput] = useState("");
+  const [savingB2BPlan, setSavingB2BPlan] = useState(false);
+  const [deletingB2BPlan, setDeletingB2BPlan] = useState<B2BPlan | null>(null);
+
   const authFetch = useAuthFetch();
 
-  // Fetch all data
+  // ────────────────────────────────────────────────
+  // Data fetching
+  // ────────────────────────────────────────────────
   const fetchData = useCallback(
     async (showRefreshToast = false) => {
       try {
-        if (showRefreshToast) {
-          setRefreshing(true);
-        } else {
-          setLoading(true);
-        }
+        if (showRefreshToast) setRefreshing(true);
+        else setLoading(true);
 
-        const [plansRes, subscribersRes, companiesRes, statsRes] =
+        const [plansRes, b2bPlansRes, subsRes, companiesRes, statsRes] =
           await Promise.all([
             fetch("/panel/api/stripe/plans"),
+            authFetch("/panel/api/admin/subscription-plans"),
             authFetch("/panel/api/admin/subscriptions/b2c"),
             authFetch("/panel/api/admin/companies"),
             authFetch("/panel/api/admin/subscriptions/stats"),
           ]);
 
-        // Fetch Stripe plans
         if (plansRes.ok) {
-          const plansData = await plansRes.json();
-          setStripePlans(plansData.plans || []);
+          const data = await plansRes.json();
+          setStripePlans(data.plans || []);
         }
 
-        // Fetch B2C subscribers
-        if (subscribersRes.ok) {
-          const subscribersData = await subscribersRes.json();
-          setB2cSubscribers(subscribersData || []);
+        if (b2bPlansRes.ok) {
+          const data = await b2bPlansRes.json();
+          setB2bPlans(data.filter((p: B2BPlan) => p.type === "b2b") || []);
         }
 
-        // Fetch companies
+        if (subsRes.ok) {
+          setB2cSubscribers((await subsRes.json()) || []);
+        }
+
         if (companiesRes.ok) {
-          const companiesData = await companiesRes.json();
+          const data = await companiesRes.json();
           setCompanies(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            companiesData.map((c: any) => ({
+            data.map((c: any) => ({
               id: c.companyId,
               name: c.name,
               industry: c.industry,
@@ -337,15 +397,11 @@ export default function SubscriptionsPage() {
           );
         }
 
-        // Fetch stats
         if (statsRes.ok) {
-          const statsData = await statsRes.json();
-          setStats(statsData);
+          setStats(await statsRes.json());
         }
 
-        if (showRefreshToast) {
-          toast.success("Data refreshed");
-        }
+        if (showRefreshToast) toast.success("Data refreshed");
       } catch (error) {
         console.error("Error fetching data:", error);
         toast.error("Failed to load subscription data");
@@ -361,7 +417,9 @@ export default function SubscriptionsPage() {
     fetchData();
   }, [fetchData]);
 
-  // Sync single user subscription
+  // ────────────────────────────────────────────────
+  // Sync functions
+  // ────────────────────────────────────────────────
   const syncUserSubscription = async (userId: string) => {
     try {
       setSyncingUser(userId);
@@ -370,14 +428,9 @@ export default function SubscriptionsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
-
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to sync");
 
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to sync subscription");
-      }
-
-      // Update local state
       setB2cSubscribers((prev) =>
         prev.map((sub) =>
           sub.id === userId ? { ...sub, subscription: data.subscription } : sub
@@ -390,110 +443,224 @@ export default function SubscriptionsPage() {
         })`
       );
 
-      // Refresh stats
       const statsRes = await authFetch("/panel/api/admin/subscriptions/stats");
-      if (statsRes.ok) {
-        setStats(await statsRes.json());
-      }
-    } catch (error) {
-      console.error("Error syncing subscription:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to sync subscription"
-      );
+      if (statsRes.ok) setStats(await statsRes.json());
+    } catch (error: any) {
+      toast.error(error.message || "Failed to sync subscription");
     } finally {
       setSyncingUser(null);
     }
   };
 
-  // Sync all subscriptions
   const syncAllSubscriptions = async () => {
     try {
       setSyncingAll(true);
       setSyncAllDialogOpen(false);
-
       toast.info("Syncing all subscriptions... This may take a moment.");
 
       const response = await authFetch("/panel/api/admin/subscriptions/sync", {
         method: "PUT",
       });
-
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to sync subscriptions");
-      }
+      if (!response.ok) throw new Error(data.error || "Failed to sync all");
 
       setSyncResults(data);
       setSyncResultsDialogOpen(true);
-
-      // Refresh all data
       await fetchData();
 
       toast.success(
         `Sync complete: ${data.synced} synced, ${data.failed} failed`
       );
-    } catch (error) {
-      console.error("Error syncing all subscriptions:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to sync subscriptions"
-      );
+    } catch (error: any) {
+      toast.error(error.message || "Failed to sync all subscriptions");
     } finally {
       setSyncingAll(false);
     }
   };
 
-  // Filter functions
+  // ────────────────────────────────────────────────
+  // B2B Plan CRUD handlers
+  // ────────────────────────────────────────────────
+  const openCreateB2BPlanDialog = () => {
+    setEditingB2BPlan(null);
+    setB2bPlanForm(emptyB2BPlan);
+    setB2bFeaturesInput("");
+    setIsB2BPlanDialogOpen(true);
+  };
+
+  const openEditB2BPlanDialog = (plan: B2BPlan) => {
+    setEditingB2BPlan(plan);
+    setB2bPlanForm({ ...plan });
+    setB2bFeaturesInput(plan.features.join("\n"));
+    setIsB2BPlanDialogOpen(true);
+  };
+
+  const handleSaveB2BPlan = async () => {
+    if (!b2bPlanForm.name.trim() || b2bPlanForm.price <= 0) {
+      toast.error("Plan name and price (greater than 0) are required");
+      return;
+    }
+
+    try {
+      setSavingB2BPlan(true);
+
+      const payload = {
+        ...b2bPlanForm,
+        features: b2bFeaturesInput
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+        price: Number(b2bPlanForm.price),
+        maxUsers: Number(b2bPlanForm.maxUsers),
+      };
+
+      let res: Response;
+
+      if (editingB2BPlan) {
+        res = await authFetch(
+          `/panel/api/admin/subscription-plans/${editingB2BPlan.id}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          }
+        );
+      } else {
+        res = await authFetch("/panel/api/admin/subscription-plans", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to save plan");
+      }
+
+      const savedPlan = await res.json();
+
+      setB2bPlans((prev) =>
+        editingB2BPlan
+          ? prev.map((p) => (p.id === editingB2BPlan.id ? savedPlan : p))
+          : [...prev, savedPlan]
+      );
+
+      toast.success(
+        editingB2BPlan
+          ? "Plan updated successfully"
+          : "Plan created successfully"
+      );
+      setIsB2BPlanDialogOpen(false);
+    } catch (error: any) {
+      console.error("Error saving B2B plan:", error);
+      toast.error(error.message || "Failed to save plan");
+    } finally {
+      setSavingB2BPlan(false);
+    }
+  };
+
+  const handleDeleteB2BPlan = async () => {
+    if (!deletingB2BPlan) return;
+
+    try {
+      const res = await authFetch(
+        `/panel/api/admin/subscription-plans/${deletingB2BPlan.id}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (!res.ok) throw new Error("Failed to delete plan");
+
+      setB2bPlans((prev) => prev.filter((p) => p.id !== deletingB2BPlan.id));
+      toast.success("Plan deleted successfully");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete plan");
+    } finally {
+      setDeletingB2BPlan(null);
+    }
+  };
+
+  const toggleB2BPlanActive = async (plan: B2BPlan) => {
+    try {
+      const newActive = !plan.isActive;
+      const res = await authFetch(
+        `/panel/api/admin/subscription-plans/${plan.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ isActive: newActive }),
+        }
+      );
+
+      if (!res.ok) throw new Error("Failed to update plan status");
+
+      setB2bPlans((prev) =>
+        prev.map((p) => (p.id === plan.id ? { ...p, isActive: newActive } : p))
+      );
+
+      toast.success(`Plan ${newActive ? "activated" : "deactivated"}`);
+    } catch (error) {
+      console.log(error);
+      toast.error("Failed to update plan status");
+    }
+  };
+
+  // ────────────────────────────────────────────────
+  // Filtering & Formatting helpers
+  // ────────────────────────────────────────────────
   const filteredB2C = b2cSubscribers.filter((sub) => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      sub.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      sub.email?.toLowerCase().includes(searchQuery.toLowerCase());
+      (sub.name?.toLowerCase().includes(q) ?? false) ||
+      (sub.email?.toLowerCase().includes(q) ?? false);
+
     const status = sub.subscription?.status || "no_subscription";
     const matchesStatus =
       b2cStatusFilter === "all" || status === b2cStatusFilter;
+
     return matchesSearch && matchesStatus;
   });
 
   const filteredB2B = companies.filter((company) => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      company.industry?.toLowerCase().includes(searchQuery.toLowerCase());
+      company.name.toLowerCase().includes(q) ||
+      (company.industry?.toLowerCase().includes(q) ?? false);
+
     const matchesStatus =
       b2bStatusFilter === "all" || company.status === b2bStatusFilter;
+
     return matchesSearch && matchesStatus;
   });
 
-  // Format helpers
-  const formatPrice = (amount: number, currency: string = "usd") => {
-    return new Intl.NumberFormat("en-US", {
+  const formatPrice = (amount: number, currency: string = "usd") =>
+    new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: currency.toUpperCase(),
     }).format(amount / 100);
-  };
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleDateString("en-US", {
+  const formatB2BPrice = (amount: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(amount);
+
+  const formatDate = (timestamp: number) =>
+    new Date(timestamp * 1000).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
     });
-  };
 
   const formatRelativeDate = (timestamp: number) => {
     const now = Date.now() / 1000;
     const diff = timestamp - now;
     const days = Math.floor(diff / 86400);
-
-    if (days < 0) {
-      return `${Math.abs(days)} days ago`;
-    } else if (days === 0) {
-      return "Today";
-    } else if (days === 1) {
-      return "Tomorrow";
-    } else if (days < 30) {
-      return `In ${days} days`;
-    } else {
-      return formatDate(timestamp);
-    }
+    if (days < -1) return `${Math.abs(days)} days ago`;
+    if (days === -1) return "Yesterday";
+    if (days === 0) return "Today";
+    if (days === 1) return "Tomorrow";
+    if (days < 30) return `In ${days} days`;
+    return formatDate(timestamp);
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -502,55 +669,59 @@ export default function SubscriptionsPage() {
   };
 
   const getPlanIcon = (planName: string) => {
-    const lowerName = planName.toLowerCase();
+    const lower = planName.toLowerCase();
     for (const [key, Icon] of Object.entries(planIcons)) {
-      if (lowerName.includes(key)) return Icon;
+      if (lower.includes(key)) return Icon;
     }
     return Star;
   };
 
   const getInitials = (name: string | null, email: string | null) => {
-    if (name) {
+    if (name)
       return name
         .split(" ")
         .map((n) => n[0])
         .join("")
         .toUpperCase()
         .slice(0, 2);
-    }
-    if (email) {
-      return email.slice(0, 2).toUpperCase();
-    }
+    if (email) return email.slice(0, 2).toUpperCase();
     return "?";
   };
 
-  // Check if subscription needs sync (has customer ID but no subscription ID or outdated)
   const needsSync = (sub: B2CSubscriber) => {
     if (!sub.subscription?.stripeCustomerId) return false;
     if (!sub.subscription?.subscriptionId) return true;
-    // Check if last update was more than 1 hour ago
     const lastUpdate = sub.subscription?.updatedAt || 0;
-    return Date.now() - lastUpdate > 3600000;
+    return Date.now() - lastUpdate > 3600000; // 1 hour
   };
 
-  // Loading skeleton
+  const getB2BPlanName = (planId: string) => {
+    return b2bPlans.find((p) => p.id === planId)?.name || planId || "No Plan";
+  };
+
+  // ────────────────────────────────────────────────
+  // Loading state
+  // ────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="p-4 md:p-6 lg:p-8 space-y-6">
         <div className="space-y-4">
           <Skeleton className="h-10 w-64" />
-          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-4 w-80" />
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-32" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-xl" />
           ))}
         </div>
-        <Skeleton className="h-96" />
+        <Skeleton className="h-96 rounded-xl" />
       </div>
     );
   }
 
+  // ────────────────────────────────────────────────
+  // Main render
+  // ────────────────────────────────────────────────
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-6">
       {/* Header */}
@@ -563,7 +734,7 @@ export default function SubscriptionsPage() {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold">Subscriptions</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Manage B2C subscriptions and B2B companies
+              Manage B2C subscriptions (Stripe) and B2B companies
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -591,7 +762,7 @@ export default function SubscriptionsPage() {
               }
             >
               <ExternalLink className="h-4 w-4 mr-2" />
-              Stripe
+              Stripe Dashboard
             </Button>
             <Button
               variant="outline"
@@ -618,28 +789,23 @@ export default function SubscriptionsPage() {
         {/* Stats Overview */}
         <motion.div
           variants={item}
-          className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
         >
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">
                     Monthly Revenue
                   </p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-2xl font-bold mt-1">
                     $
-                    {(stats?.mrr || 0).toLocaleString(undefined, {
+                    {(stats?.mrr || 0).toLocaleString("en-US", {
                       minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
                     })}
                   </p>
-                  <p className="text-xs text-green-600 flex items-center gap-1 mt-1">
-                    <TrendingUp className="h-3 w-3" />
-                    MRR from Stripe
-                  </p>
                 </div>
-                <div className="h-12 w-12 rounded-lg bg-green-500/10 flex items-center justify-center">
+                <div className="h-12 w-12 rounded-full bg-green-100 dark:bg-green-950 flex items-center justify-center">
                   <DollarSign className="h-6 w-6 text-green-600" />
                 </div>
               </div>
@@ -647,24 +813,17 @@ export default function SubscriptionsPage() {
           </Card>
 
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">
                     Active Subscriptions
                   </p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-2xl font-bold mt-1">
                     {stats?.activeSubscriptions || 0}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {stats?.trialingSubscriptions
-                      ? `+ ${stats.trialingSubscriptions} trialing`
-                      : `${
-                          stats?.totalB2CCustomers || b2cSubscribers.length
-                        } total customers`}
-                  </p>
                 </div>
-                <div className="h-12 w-12 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <div className="h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
                   <Users className="h-6 w-6 text-blue-600" />
                 </div>
               </div>
@@ -672,19 +831,16 @@ export default function SubscriptionsPage() {
           </Card>
 
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">B2B Companies</p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-2xl font-bold mt-1">
                     {stats?.activeB2BCompanies ||
                       companies.filter((c) => c.status === "active").length}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {stats?.totalB2BCompanies || companies.length} total
-                  </p>
                 </div>
-                <div className="h-12 w-12 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                <div className="h-12 w-12 rounded-full bg-purple-100 dark:bg-purple-950 flex items-center justify-center">
                   <Building2 className="h-6 w-6 text-purple-600" />
                 </div>
               </div>
@@ -692,72 +848,19 @@ export default function SubscriptionsPage() {
           </Card>
 
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">
                     Needs Attention
                   </p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-2xl font-bold mt-1">
                     {(stats?.pastDueSubscriptions || 0) +
                       (stats?.cancelingSubscriptions || 0)}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {stats?.pastDueSubscriptions || 0} past due •{" "}
-                    {stats?.cancelingSubscriptions || 0} canceling
-                  </p>
                 </div>
-                <div className="h-12 w-12 rounded-lg bg-orange-500/10 flex items-center justify-center">
+                <div className="h-12 w-12 rounded-full bg-orange-100 dark:bg-orange-950 flex items-center justify-center">
                   <AlertTriangle className="h-6 w-6 text-orange-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Stripe Info Banner */}
-        <motion.div variants={item}>
-          <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20">
-            <CardContent className="py-4">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-                  <CreditCard className="h-5 w-5 text-blue-600" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-sm">
-                    B2C Plans managed in Stripe Dashboard
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Create and manage plans in Stripe. Use the &quot;Sync
-                    All&quot; button to update subscription data from Stripe.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      window.open(
-                        "https://dashboard.stripe.com/products",
-                        "_blank"
-                      )
-                    }
-                  >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Products
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      window.open(
-                        "https://dashboard.stripe.com/webhooks",
-                        "_blank"
-                      )
-                    }
-                  >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Webhooks
-                  </Button>
                 </div>
               </div>
             </CardContent>
@@ -767,7 +870,7 @@ export default function SubscriptionsPage() {
         {/* Tabs */}
         <motion.div variants={item}>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-4 mb-6">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="b2c">
                 B2C
@@ -788,7 +891,7 @@ export default function SubscriptionsPage() {
             </TabsList>
 
             {/* Overview Tab */}
-            <TabsContent value="overview" className="mt-6 space-y-6">
+            <TabsContent value="overview" className="space-y-8">
               <div className="grid lg:grid-cols-2 gap-6">
                 {/* Recent B2C Subscribers */}
                 <Card>
@@ -810,12 +913,9 @@ export default function SubscriptionsPage() {
                   </CardHeader>
                   <CardContent>
                     {b2cSubscribers.length === 0 ? (
-                      <div className="text-center py-8 text-muted-foreground">
+                      <div className="text-center py-10 text-muted-foreground">
                         <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
                         <p>No subscribers yet</p>
-                        <p className="text-xs mt-1">
-                          Subscribers appear when users subscribe via Stripe
-                        </p>
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -830,7 +930,7 @@ export default function SubscriptionsPage() {
                           return (
                             <div
                               key={sub.id}
-                              className="flex items-center justify-between p-3 rounded-lg border hover:border-foreground/20 transition-colors"
+                              className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
                             >
                               <Link
                                 href={`/dashboard/users/${sub.id}`}
@@ -839,10 +939,10 @@ export default function SubscriptionsPage() {
                                 <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
                                   {sub.photoURL ? (
                                     <Image
-                                      width={500}
-                                      height={500}
                                       src={sub.photoURL}
-                                      alt={sub.name || "User"}
+                                      alt={sub.name || ""}
+                                      width={40}
+                                      height={40}
                                       className="h-full w-full object-cover"
                                     />
                                   ) : (
@@ -852,25 +952,22 @@ export default function SubscriptionsPage() {
                                   )}
                                 </div>
                                 <div>
-                                  <p className="font-medium text-sm">
-                                    {sub.name || sub.email || "Unknown User"}
+                                  <p className="font-medium">
+                                    {sub.name || sub.email || "Unknown"}
                                   </p>
-                                  <p className="text-xs text-muted-foreground">
+                                  <p className="text-sm text-muted-foreground">
                                     {sub.subscription?.planName || "No Plan"}
                                   </p>
                                 </div>
                               </Link>
                               <div className="flex items-center gap-2">
                                 {sub.subscription?.cancelAtPeriodEnd && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs hidden sm:flex"
-                                  >
+                                  <Badge variant="outline" className="text-xs">
                                     Canceling
                                   </Badge>
                                 )}
                                 <Badge variant={status.variant}>
-                                  <StatusIcon className="h-3 w-3 mr-1" />
+                                  <StatusIcon className="h-3.5 w-3.5 mr-1" />
                                   {status.label}
                                 </Badge>
                                 {needsSync(sub) && (
@@ -897,13 +994,13 @@ export default function SubscriptionsPage() {
                   </CardContent>
                 </Card>
 
-                {/* B2B Companies */}
+                {/* Recent B2B Companies */}
                 <Card>
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg flex items-center gap-2">
                         <Building2 className="h-5 w-5 text-purple-500" />
-                        B2B Companies
+                        Recent Companies
                       </CardTitle>
                       <Button
                         variant="ghost"
@@ -917,7 +1014,7 @@ export default function SubscriptionsPage() {
                   </CardHeader>
                   <CardContent>
                     {companies.length === 0 ? (
-                      <div className="text-center py-8 text-muted-foreground">
+                      <div className="text-center py-10 text-muted-foreground">
                         <Building2 className="h-12 w-12 mx-auto mb-3 opacity-50" />
                         <p>No companies yet</p>
                       </div>
@@ -932,17 +1029,17 @@ export default function SubscriptionsPage() {
                               key={company.id}
                               href={`/dashboard/companies/${company.id}`}
                             >
-                              <div className="flex items-center justify-between p-3 rounded-lg border hover:border-foreground/20 transition-colors cursor-pointer">
+                              <div className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors">
                                 <div className="flex items-center gap-3">
-                                  <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                                  <div className="h-10 w-10 rounded-lg bg-purple-100 dark:bg-purple-950 flex items-center justify-center">
                                     <Building2 className="h-5 w-5 text-purple-600" />
                                   </div>
                                   <div>
-                                    <p className="font-medium text-sm">
+                                    <p className="font-medium">
                                       {company.name}
                                     </p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {company.plan || "No Plan"}
+                                    <p className="text-sm text-muted-foreground">
+                                      {getB2BPlanName(company.plan)}
                                     </p>
                                   </div>
                                 </div>
@@ -959,66 +1056,53 @@ export default function SubscriptionsPage() {
                 </Card>
               </div>
 
-              {/* Alerts */}
+              {/* Attention alerts */}
               {((stats?.pastDueSubscriptions || 0) > 0 ||
                 (stats?.cancelingSubscriptions || 0) > 0) && (
-                <div className="grid md:grid-cols-2 gap-4">
-                  {(stats?.pastDueSubscriptions || 0) > 0 && (
-                    <Card className="border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20">
-                      <CardContent className="py-4">
+                <div className="grid md:grid-cols-2 gap-5">
+                  {stats?.pastDueSubscriptions ? (
+                    <Card className="border-red-200 bg-red-50/50 dark:bg-red-950/20 dark:border-red-800/50">
+                      <CardContent className="p-5">
                         <div className="flex items-center gap-3">
-                          <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm">
-                              {stats?.pastDueSubscriptions} past due
+                          <AlertCircle className="h-5 w-5 text-red-600" />
+                          <div>
+                            <p className="font-medium">
+                              {stats.pastDueSubscriptions} past due
                             </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              Payment failed - action required
+                            <p className="text-sm text-muted-foreground">
+                              Payment issues - review required
                             </p>
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={() =>
-                              window.open(
-                                "https://dashboard.stripe.com/subscriptions?status=past_due",
-                                "_blank"
-                              )
-                            }
-                          >
-                            View
-                          </Button>
                         </div>
                       </CardContent>
                     </Card>
-                  )}
+                  ) : null}
 
-                  {(stats?.cancelingSubscriptions || 0) > 0 && (
-                    <Card className="border-yellow-200 bg-yellow-50/50 dark:border-yellow-900 dark:bg-yellow-950/20">
-                      <CardContent className="py-4">
+                  {stats?.cancelingSubscriptions ? (
+                    <Card className="border-yellow-200 bg-yellow-50/50 dark:bg-yellow-950/20 dark:border-yellow-800/50">
+                      <CardContent className="p-5">
                         <div className="flex items-center gap-3">
-                          <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm">
-                              {stats?.cancelingSubscriptions} canceling
+                          <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                          <div>
+                            <p className="font-medium">
+                              {stats.cancelingSubscriptions} canceling
                             </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              Will lose access at period end
+                            <p className="text-sm text-muted-foreground">
+                              Access ends at period close
                             </p>
                           </div>
                         </div>
                       </CardContent>
                     </Card>
-                  )}
+                  ) : null}
                 </div>
               )}
             </TabsContent>
 
-            {/* B2C Subscribers Tab */}
-            <TabsContent value="b2c" className="mt-6 space-y-4">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
+            {/* B2C Tab */}
+            <TabsContent value="b2c" className="space-y-6">
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                <div className="relative flex-1 w-full">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder="Search by name or email..."
@@ -1029,7 +1113,7 @@ export default function SubscriptionsPage() {
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
+                    <Button variant="outline" className="min-w-35">
                       <Filter className="h-4 w-4 mr-2" />
                       {b2cStatusFilter === "all"
                         ? "All Status"
@@ -1037,7 +1121,7 @@ export default function SubscriptionsPage() {
                           b2cStatusFilter}
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent>
+                  <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => setB2cStatusFilter("all")}>
                       All Status
                     </DropdownMenuItem>
@@ -1074,13 +1158,15 @@ export default function SubscriptionsPage() {
               <Card>
                 <CardContent className="p-0">
                   {filteredB2C.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground">
-                      <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>No subscribers found</p>
-                      <p className="text-sm mt-1">
+                    <div className="text-center py-16 text-muted-foreground">
+                      <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p className="text-lg font-medium">
+                        No matching subscribers found
+                      </p>
+                      <p className="text-sm mt-2">
                         {searchQuery || b2cStatusFilter !== "all"
-                          ? "Try adjusting your filters"
-                          : "Subscribers appear when users subscribe via Stripe"}
+                          ? "Try different filters"
+                          : "Subscribers appear after Stripe checkout"}
                       </p>
                     </div>
                   ) : (
@@ -1113,10 +1199,10 @@ export default function SubscriptionsPage() {
                                   <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
                                     {sub.photoURL ? (
                                       <Image
-                                        width={500}
-                                        height={500}
                                         src={sub.photoURL}
-                                        alt={sub.name || "User"}
+                                        alt={sub.name || "user"}
+                                        width={40}
+                                        height={40}
                                         className="h-full w-full object-cover"
                                       />
                                     ) : (
@@ -1130,20 +1216,20 @@ export default function SubscriptionsPage() {
                                       {sub.name || "Unknown"}
                                     </p>
                                     <p className="text-xs text-muted-foreground truncate">
-                                      {sub.email || "No email"}
+                                      {sub.email || "—"}
                                     </p>
                                   </div>
                                 </div>
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline">
-                                  {sub.subscription?.planName || "No Plan"}
+                                  {sub.subscription?.planName || "—"}
                                 </Badge>
                               </TableCell>
                               <TableCell className="hidden md:table-cell">
                                 {sub.subscription?.currentPeriodEnd ? (
-                                  <div className="flex flex-col">
-                                    <span className="text-sm">
+                                  <div className="flex flex-col text-sm">
+                                    <span>
                                       {formatDate(
                                         sub.subscription.currentPeriodEnd
                                       )}
@@ -1155,21 +1241,19 @@ export default function SubscriptionsPage() {
                                     </span>
                                   </div>
                                 ) : (
-                                  <span className="text-muted-foreground">
-                                    —
-                                  </span>
+                                  "—"
                                 )}
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-2">
                                   <Badge variant={status.variant}>
-                                    <StatusIcon className="h-3 w-3 mr-1" />
+                                    <StatusIcon className="h-3.5 w-3.5 mr-1" />
                                     {status.label}
                                   </Badge>
                                   {sub.subscription?.cancelAtPeriodEnd && (
                                     <Badge
                                       variant="outline"
-                                      className="text-xs hidden sm:flex"
+                                      className="text-xs hidden sm:inline-flex"
                                     >
                                       Canceling
                                     </Badge>
@@ -1210,44 +1294,38 @@ export default function SubscriptionsPage() {
                                       <>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem
-                                          onClick={() =>
+                                          onClick={() => {
+                                            const id =
+                                              sub.subscription?.subscriptionId;
+                                            if (!id) return;
+
                                             copyToClipboard(
-                                              sub.subscription
-                                                ?.subscriptionId || "",
+                                              id,
                                               "Subscription ID"
-                                            )
-                                          }
+                                            );
+                                          }}
                                         >
                                           <Copy className="h-4 w-4 mr-2" />
                                           Copy Sub ID
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
-                                          onClick={() =>
-                                            window.open(
-                                              `https://dashboard.stripe.com/subscriptions/${sub.subscription?.subscriptionId}`,
-                                              "_blank"
-                                            )
+                                          disabled={
+                                            !sub.subscription?.subscriptionId
                                           }
+                                          onClick={() => {
+                                            const id =
+                                              sub.subscription!.subscriptionId!;
+                                            window.open(
+                                              `https://dashboard.stripe.com/subscriptions/${id}`,
+                                              "_blank"
+                                            );
+                                          }}
                                         >
                                           <ExternalLink className="h-4 w-4 mr-2" />
                                           View in Stripe
                                         </DropdownMenuItem>
                                       </>
                                     )}
-                                    {sub.subscription?.stripeCustomerId &&
-                                      !sub.subscription?.subscriptionId && (
-                                        <DropdownMenuItem
-                                          onClick={() =>
-                                            window.open(
-                                              `https://dashboard.stripe.com/customers/${sub.subscription?.stripeCustomerId}`,
-                                              "_blank"
-                                            )
-                                          }
-                                        >
-                                          <ExternalLink className="h-4 w-4 mr-2" />
-                                          View Customer
-                                        </DropdownMenuItem>
-                                      )}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </TableCell>
@@ -1262,9 +1340,9 @@ export default function SubscriptionsPage() {
             </TabsContent>
 
             {/* B2B Tab */}
-            <TabsContent value="b2b" className="mt-6 space-y-4">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
+            <TabsContent value="b2b" className="space-y-6">
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                <div className="relative flex-1 w-full">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder="Search companies..."
@@ -1275,7 +1353,7 @@ export default function SubscriptionsPage() {
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
+                    <Button variant="outline" className="min-w-35">
                       <Filter className="h-4 w-4 mr-2" />
                       {b2bStatusFilter === "all"
                         ? "All Status"
@@ -1283,7 +1361,7 @@ export default function SubscriptionsPage() {
                           b2bStatusFilter}
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent>
+                  <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => setB2bStatusFilter("all")}>
                       All Status
                     </DropdownMenuItem>
@@ -1300,20 +1378,22 @@ export default function SubscriptionsPage() {
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Link href="/dashboard/companies">
-                  <Button>
+                <Button asChild>
+                  <Link href="/dashboard/companies">
                     <Building2 className="h-4 w-4 mr-2" />
                     Manage Companies
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               </div>
 
               <Card>
                 <CardContent className="p-0">
                   {filteredB2B.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground">
-                      <Building2 className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>No companies found</p>
+                    <div className="text-center py-16 text-muted-foreground">
+                      <Building2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p className="text-lg font-medium">
+                        No matching companies
+                      </p>
                     </div>
                   ) : (
                     <Table>
@@ -1338,17 +1418,18 @@ export default function SubscriptionsPage() {
                               <TableCell>
                                 <Link
                                   href={`/dashboard/companies/${company.id}`}
+                                  className="block"
                                 >
-                                  <div className="flex items-center gap-3 cursor-pointer">
-                                    <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
+                                  <div className="flex items-center gap-3 hover:underline">
+                                    <div className="h-10 w-10 rounded-lg bg-purple-100 dark:bg-purple-950 flex items-center justify-center shrink-0">
                                       <Building2 className="h-5 w-5 text-purple-600" />
                                     </div>
                                     <div className="min-w-0">
-                                      <p className="font-medium hover:underline truncate">
+                                      <p className="font-medium truncate">
                                         {company.name}
                                       </p>
                                       <p className="text-xs text-muted-foreground truncate">
-                                        {company.industry}
+                                        {company.industry || "—"}
                                       </p>
                                     </div>
                                   </div>
@@ -1356,12 +1437,12 @@ export default function SubscriptionsPage() {
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline">
-                                  {company.plan || "No Plan"}
+                                  {getB2BPlanName(company.plan)}
                                 </Badge>
                               </TableCell>
                               <TableCell className="hidden md:table-cell">
                                 <span className="text-sm">
-                                  {company.currentUsers || 0}/
+                                  {company.currentUsers || 0} /{" "}
                                   {company.userCapacity === -1
                                     ? "∞"
                                     : company.userCapacity}
@@ -1394,10 +1475,6 @@ export default function SubscriptionsPage() {
                                         Manage Users
                                       </Link>
                                     </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem className="text-destructive">
-                                      Suspend Company
-                                    </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </TableCell>
@@ -1412,356 +1489,425 @@ export default function SubscriptionsPage() {
             </TabsContent>
 
             {/* Plans Tab */}
-            <TabsContent value="plans" className="mt-6 space-y-6">
-              {/* Stripe Management Banner */}
-              <Card className="border-primary/20 bg-primary/5">
-                <CardContent className="py-6">
-                  <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
-                    <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                      <CreditCard className="h-6 w-6 text-primary" />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold">
-                        Manage Plans in Stripe Dashboard
-                      </h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Create products, set prices, and configure billing in
-                        Stripe. Plans sync automatically via webhooks.
-                      </p>
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        <Badge variant="outline" className="text-xs">
-                          <Check className="h-3 w-3 mr-1" />
-                          Auto-sync enabled
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          <Check className="h-3 w-3 mr-1" />
-                          {stripePlans.length} plans loaded
-                        </Badge>
-                      </div>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
-                      <Button
-                        onClick={() =>
-                          window.open(
-                            "https://dashboard.stripe.com/products/create",
-                            "_blank"
-                          )
-                        }
-                      >
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        Create Product
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() =>
-                          window.open(
-                            "https://dashboard.stripe.com/products",
-                            "_blank"
-                          )
-                        }
-                      >
-                        View All
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Plans Grid */}
-              {stripePlans.length === 0 ? (
-                <Card>
-                  <CardContent className="py-12 text-center">
-                    <CreditCard className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                    <h3 className="font-semibold text-lg mb-2">
-                      No Plans Found
+            <TabsContent value="plans" className="space-y-10">
+              {/* B2C Plans (Stripe) */}
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold flex items-center gap-2">
+                      <CreditCard className="h-5 w-5 text-blue-600" />
+                      B2C Plans (Stripe)
                     </h3>
-                    <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
-                      Create subscription products in Stripe Dashboard with
-                      metadata to customize appearance.
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Managed in Stripe Dashboard
                     </p>
-                    <Button
-                      onClick={() =>
-                        window.open(
-                          "https://dashboard.stripe.com/products/create",
-                          "_blank"
-                        )
-                      }
+                  </div>
+                  <Button variant="outline" size="sm" asChild>
+                    <a
+                      href="https://dashboard.stripe.com/products"
+                      target="_blank"
+                      rel="noopener noreferrer"
                     >
                       <ExternalLink className="h-4 w-4 mr-2" />
-                      Create First Product
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {stripePlans.map((plan) => {
-                    const PlanIcon = getPlanIcon(plan.name);
-                    const isPopular = plan.metadata?.popular === "true";
-                    const subscriberCount = b2cSubscribers.filter(
-                      (s) =>
-                        s.subscription?.priceId === plan.priceId &&
-                        s.subscription?.status === "active"
-                    ).length;
-
-                    return (
-                      <Card
-                        key={plan.priceId}
-                        className={`relative ${
-                          isPopular ? "border-primary shadow-lg" : ""
-                        }`}
-                      >
-                        {isPopular && (
-                          <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                            <Badge className="bg-primary text-primary-foreground">
-                              Most Popular
-                            </Badge>
-                          </div>
-                        )}
-                        <CardHeader className="pb-4">
-                          <div className="flex items-start justify-between">
-                            <div
-                              className={`h-12 w-12 rounded-xl flex items-center justify-center ${
-                                isPopular
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-primary/10"
-                              }`}
-                            >
-                              <PlanIcon
-                                className={`h-6 w-6 ${
-                                  isPopular ? "" : "text-primary"
-                                }`}
-                              />
-                            </div>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                >
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    copyToClipboard(plan.priceId, "Price ID")
-                                  }
-                                >
-                                  <Copy className="h-4 w-4 mr-2" />
-                                  Copy Price ID
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    copyToClipboard(
-                                      plan.productId,
-                                      "Product ID"
-                                    )
-                                  }
-                                >
-                                  <Copy className="h-4 w-4 mr-2" />
-                                  Copy Product ID
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    window.open(
-                                      `https://dashboard.stripe.com/products/${plan.productId}`,
-                                      "_blank"
-                                    )
-                                  }
-                                >
-                                  <ExternalLink className="h-4 w-4 mr-2" />
-                                  Edit in Stripe
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                          <div className="mt-4">
-                            <CardTitle className="text-xl">
-                              {plan.name}
-                            </CardTitle>
-                            {plan.description && (
-                              <CardDescription className="mt-1">
-                                {plan.description}
-                              </CardDescription>
-                            )}
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="mb-6">
-                            <span className="text-3xl font-bold">
-                              {formatPrice(plan.price, plan.currency)}
-                            </span>
-                            <span className="text-muted-foreground">
-                              /{plan.interval}
-                            </span>
-                          </div>
-
-                          {/* Subscriber count */}
-                          <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
-                            <Users className="h-4 w-4" />
-                            <span>
-                              {subscriberCount} active subscriber
-                              {subscriberCount !== 1 ? "s" : ""}
-                            </span>
-                          </div>
-
-                          <Separator className="my-4" />
-
-                          {/* Features */}
-                          {plan.features.length > 0 ? (
-                            <ul className="space-y-2">
-                              {plan.features.slice(0, 5).map((feature, idx) => (
-                                <li
-                                  key={idx}
-                                  className="flex items-start gap-2 text-sm"
-                                >
-                                  <Check className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
-                                  <span>{feature}</span>
-                                </li>
-                              ))}
-                              {plan.features.length > 5 && (
-                                <li className="text-xs text-muted-foreground pl-6">
-                                  +{plan.features.length - 5} more features
-                                </li>
-                              )}
-                            </ul>
-                          ) : (
-                            <p className="text-sm text-muted-foreground italic">
-                              No features defined. Add them in Stripe product
-                              metadata as a JSON array.
-                            </p>
-                          )}
-
-                          {/* Price ID */}
-                          <div className="mt-4 pt-4 border-t">
-                            <p className="text-xs text-muted-foreground font-mono truncate">
-                              {plan.priceId}
-                            </p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+                      Manage in Stripe
+                    </a>
+                  </Button>
                 </div>
-              )}
 
-              {/* How to Configure Plans Info */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">
-                    How to Configure Plans in Stripe
-                  </CardTitle>
-                  <CardDescription>
-                    Set up product metadata to customize how plans appear in
-                    your app
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div>
-                      <h4 className="font-medium mb-3 flex items-center gap-2">
-                        <span className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                          1
-                        </span>
-                        Required Metadata
+                {stripePlans.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center text-muted-foreground">
+                      <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-60" />
+                      <h4 className="text-lg font-medium">
+                        No B2C plans found
                       </h4>
-                      <ul className="space-y-3 text-sm">
-                        <li className="flex items-start gap-2">
-                          <code className="bg-muted px-1.5 py-0.5 rounded text-xs shrink-0 mt-0.5">
-                            type
-                          </code>
-                          <span className="text-muted-foreground">
-                            Set to{" "}
-                            <code className="bg-muted px-1 rounded">b2c</code>{" "}
-                            for consumer plans
-                          </span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                          <code className="bg-muted px-1.5 py-0.5 rounded text-xs shrink-0 mt-0.5">
-                            features
-                          </code>
-                          <span className="text-muted-foreground">
-                            JSON array:{" "}
-                            <code className="bg-muted px-1 rounded text-xs">
-                              [&quot;Feature 1&quot;, &quot;Feature 2&quot;]
-                            </code>
-                          </span>
-                        </li>
-                      </ul>
-                    </div>
-                    <div>
-                      <h4 className="font-medium mb-3 flex items-center gap-2">
-                        <span className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                          2
-                        </span>
-                        Optional Metadata
-                      </h4>
-                      <ul className="space-y-3 text-sm">
-                        <li className="flex items-start gap-2">
-                          <code className="bg-muted px-1.5 py-0.5 rounded text-xs shrink-0 mt-0.5">
-                            popular
-                          </code>
-                          <span className="text-muted-foreground">
-                            Set to{" "}
-                            <code className="bg-muted px-1 rounded">true</code>{" "}
-                            to highlight plan
-                          </span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                          <code className="bg-muted px-1.5 py-0.5 rounded text-xs shrink-0 mt-0.5">
-                            sortOrder
-                          </code>
-                          <span className="text-muted-foreground">
-                            Number for ordering (1, 2, 3...)
-                          </span>
-                        </li>
-                      </ul>
-                    </div>
+                      <p className="mt-2">
+                        Create subscription products in Stripe
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {stripePlans.map((plan) => {
+                      const PlanIcon = getPlanIcon(plan.name);
+                      const isPopular = plan.metadata?.popular === "true";
+                      const count = b2cSubscribers.filter(
+                        (s) =>
+                          s.subscription?.priceId === plan.priceId &&
+                          s.subscription?.status === "active"
+                      ).length;
+
+                      return (
+                        <Card
+                          key={plan.priceId}
+                          className={`relative ${
+                            isPopular ? "border-primary shadow-md" : ""
+                          }`}
+                        >
+                          {isPopular && (
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                              <Badge className="bg-primary text-primary-foreground">
+                                Popular
+                              </Badge>
+                            </div>
+                          )}
+                          <CardContent className="p-6">
+                            <div className="flex items-start justify-between mb-4">
+                              <div
+                                className={`h-12 w-12 rounded-xl flex items-center justify-center ${
+                                  isPopular
+                                    ? "bg-primary text-white"
+                                    : "bg-primary/10"
+                                }`}
+                              >
+                                <PlanIcon
+                                  className={`h-6 w-6 ${
+                                    isPopular ? "" : "text-primary"
+                                  }`}
+                                />
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() =>
+                                  window.open(
+                                    `https://dashboard.stripe.com/products/${plan.productId}`,
+                                    "_blank"
+                                  )
+                                }
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            <h4 className="font-bold text-xl">{plan.name}</h4>
+
+                            <div className="mt-2 mb-4">
+                              <span className="text-3xl font-bold">
+                                {formatPrice(plan.price, plan.currency)}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {" "}
+                                /{plan.interval}
+                              </span>
+                            </div>
+
+                            <div className="text-sm text-muted-foreground mb-5 flex items-center gap-2">
+                              <Users className="h-4 w-4" />
+                              {count} active{" "}
+                              {count === 1 ? "subscriber" : "subscribers"}
+                            </div>
+
+                            {plan.features.length > 0 && (
+                              <ul className="space-y-2 text-sm">
+                                {plan.features
+                                  .slice(0, 4)
+                                  .map((feature, idx) => (
+                                    <li
+                                      key={idx}
+                                      className="flex items-start gap-2"
+                                    >
+                                      <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                                      {feature}
+                                    </li>
+                                  ))}
+                                {plan.features.length > 4 && (
+                                  <li className="text-xs text-muted-foreground pl-6">
+                                    +{plan.features.length - 4} more
+                                  </li>
+                                )}
+                              </ul>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
-                  <Separator className="my-6" />
-                  <div>
-                    <h4 className="font-medium mb-3">Example Product Setup</h4>
-                    <pre className="bg-muted p-4 rounded-lg text-xs overflow-x-auto">
-                      {`// In Stripe Dashboard → Products → [Product] → Metadata
-{
+                )}
+
+                {/* ────────────────────────────────
+                    Restored Stripe Guidance Section
+                ──────────────────────────────── */}
+                <Card className="mt-10 border-dashed">
+                  <CardHeader>
+                    <CardTitle className="text-lg">
+                      How to Configure Plans in Stripe
+                    </CardTitle>
+                    <CardDescription>
+                      Use product metadata to control how plans appear in this
+                      admin dashboard
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid md:grid-cols-2 gap-8">
+                      <div>
+                        <h4 className="font-medium mb-3 flex items-center gap-2">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                            1
+                          </span>
+                          Required Metadata
+                        </h4>
+                        <ul className="space-y-3 text-sm">
+                          <li className="flex items-start gap-3">
+                            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">
+                              type
+                            </code>
+                            <span className="text-muted-foreground">
+                              Must be set to{" "}
+                              <code className="bg-muted px-1.5 rounded">
+                                b2c
+                              </code>
+                            </span>
+                          </li>
+                          <li className="flex items-start gap-3">
+                            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">
+                              features
+                            </code>
+                            <span className="text-muted-foreground">
+                              JSON array of strings:
+                              <br />
+                              <code className="bg-muted px-1.5 rounded text-xs">
+                                [&quot;Unlimited storage&quot;, &quot;Priority
+                                support&quot;]
+                              </code>
+                            </span>
+                          </li>
+                        </ul>
+                      </div>
+
+                      <div>
+                        <h4 className="font-medium mb-3 flex items-center gap-2">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                            2
+                          </span>
+                          Optional / Recommended Metadata
+                        </h4>
+                        <ul className="space-y-3 text-sm">
+                          <li className="flex items-start gap-3">
+                            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">
+                              popular
+                            </code>
+                            <span className="text-muted-foreground">
+                              Set to <code>true</code> to highlight as most
+                              popular plan
+                            </span>
+                          </li>
+                          <li className="flex items-start gap-3">
+                            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">
+                              sortOrder
+                            </code>
+                            <span className="text-muted-foreground">
+                              Numeric value (1 = first, 2 = second, etc.)
+                            </span>
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div>
+                      <h4 className="font-medium mb-3">
+                        Example Metadata (ready to copy-paste)
+                      </h4>
+                      <pre className="bg-muted p-4 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                        {`{
   "type": "b2c",
-  "features": "[\\"Unlimited tracking\\", \\"AI insights\\", \\"Priority support\\"]",
+  "features": "[\\"Unlimited projects\\", \\"Priority support 24/7\\", \\"Custom reports\\", \\"SSO & team invites\\"]",
   "popular": "true",
   "sortOrder": "2"
 }`}
-                    </pre>
+                      </pre>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Separator className="my-12" />
+
+              {/* B2B Plans Section */}
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold flex items-center gap-2">
+                      <Building2 className="h-5 w-5 text-purple-600" />
+                      B2B Plans
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Create and manage subscription tiers for companies
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
+                  <Button onClick={openCreateB2BPlanDialog}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add B2B Plan
+                  </Button>
+                </div>
+
+                {b2bPlans.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center text-muted-foreground">
+                      <Package className="h-12 w-12 mx-auto mb-4 opacity-60" />
+                      <h4 className="text-lg font-medium">No B2B plans yet</h4>
+                      <Button
+                        className="mt-6"
+                        onClick={openCreateB2BPlanDialog}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create First Plan
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {b2bPlans.map((plan) => {
+                      const companyCount = companies.filter(
+                        (c) => c.plan === plan.id
+                      ).length;
+
+                      return (
+                        <Card
+                          key={plan.id}
+                          className={`relative ${
+                            !plan.isActive ? "opacity-65 border-dashed" : ""
+                          }`}
+                        >
+                          {!plan.isActive && (
+                            <div className="absolute -top-2 -right-2">
+                              <Badge variant="secondary">Inactive</Badge>
+                            </div>
+                          )}
+                          <CardContent className="p-6">
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="h-12 w-12 rounded-xl bg-purple-100 dark:bg-purple-950 flex items-center justify-center">
+                                <Building2 className="h-6 w-6 text-purple-600" />
+                              </div>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() => openEditB2BPlanDialog(plan)}
+                                  >
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => toggleB2BPlanActive(plan)}
+                                  >
+                                    {plan.isActive ? (
+                                      <>
+                                        <X className="h-4 w-4 mr-2" />
+                                        Deactivate
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Check className="h-4 w-4 mr-2" />
+                                        Activate
+                                      </>
+                                    )}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onClick={() => setDeletingB2BPlan(plan)}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+
+                            <h4 className="font-bold text-xl">{plan.name}</h4>
+
+                            <div className="mt-2 mb-5">
+                              <span className="text-3xl font-bold">
+                                {formatB2BPrice(plan.price)}
+                              </span>
+                              <span className="text-muted-foreground">
+                                /{plan.billingCycle === "yearly" ? "yr" : "mo"}
+                              </span>
+                            </div>
+
+                            <div className="space-y-1.5 text-sm text-muted-foreground mb-6">
+                              <div>
+                                Max users:{" "}
+                                <span className="font-medium">
+                                  {plan.maxUsers === -1
+                                    ? "Unlimited"
+                                    : plan.maxUsers}
+                                </span>
+                              </div>
+                              <div>
+                                {companyCount} compan
+                                {companyCount === 1 ? "y" : "ies"} using this
+                                plan
+                              </div>
+                            </div>
+
+                            {plan.description && (
+                              <p className="text-sm mb-5 text-muted-foreground border-l-2 pl-3 border-muted-foreground/40">
+                                {plan.description}
+                              </p>
+                            )}
+
+                            {plan.features.length > 0 && (
+                              <ul className="space-y-2 text-sm">
+                                {plan.features.slice(0, 4).map((f, i) => (
+                                  <li
+                                    key={i}
+                                    className="flex items-start gap-2"
+                                  >
+                                    <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                                    {f}
+                                  </li>
+                                ))}
+                                {plan.features.length > 4 && (
+                                  <li className="text-xs text-muted-foreground pl-6">
+                                    +{plan.features.length - 4} more features
+                                  </li>
+                                )}
+                              </ul>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
         </motion.div>
       </motion.div>
 
-      {/* Sync All Confirmation Dialog */}
+      {/* Sync All Confirmation */}
       <AlertDialog open={syncAllDialogOpen} onOpenChange={setSyncAllDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Sync All Subscriptions</AlertDialogTitle>
+            <AlertDialogTitle>Sync All Subscriptions?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will fetch the latest subscription data from Stripe for all
-              users with a Stripe customer ID ({b2cSubscribers.length} users).
-              This may take a few moments.
+              This will refresh subscription data from Stripe for all users with
+              a customer ID ({b2cSubscribers.length} records). This may take a
+              few moments.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={syncAllSubscriptions}>
-              <RotateCcw className="h-4 w-4 mr-2" />
-              Sync All
+            <AlertDialogAction
+              onClick={syncAllSubscriptions}
+              disabled={syncingAll}
+            >
+              {syncingAll ? "Syncing..." : "Sync All"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Sync Results Dialog */}
+      {/* Sync Results */}
       <Dialog
         open={syncResultsDialogOpen}
         onOpenChange={setSyncResultsDialogOpen}
@@ -1770,69 +1916,68 @@ export default function SubscriptionsPage() {
           <DialogHeader>
             <DialogTitle>Sync Complete</DialogTitle>
             <DialogDescription>
-              Subscription data has been synced from Stripe
+              Latest subscription data loaded from Stripe
             </DialogDescription>
           </DialogHeader>
 
           {syncResults && (
-            <div className="space-y-4">
-              {/* Summary Stats */}
+            <div className="space-y-6">
               <div className="grid grid-cols-3 gap-4">
-                <Card>
-                  <CardContent className="p-4 text-center">
-                    <CheckCircle2 className="h-8 w-8 text-green-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold">{syncResults.synced}</p>
-                    <p className="text-xs text-muted-foreground">Synced</p>
+                <Card className="bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800">
+                  <CardContent className="p-5 text-center">
+                    <CheckCircle2 className="h-10 w-10 text-green-600 mx-auto mb-2" />
+                    <p className="text-3xl font-bold">{syncResults.synced}</p>
+                    <p className="text-sm text-muted-foreground">Synced</p>
                   </CardContent>
                 </Card>
-                <Card>
-                  <CardContent className="p-4 text-center">
-                    <AlertCircle className="h-8 w-8 text-yellow-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold">
+                <Card className="bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800">
+                  <CardContent className="p-5 text-center">
+                    <AlertCircle className="h-10 w-10 text-yellow-600 mx-auto mb-2" />
+                    <p className="text-3xl font-bold">
                       {syncResults.noSubscription}
                     </p>
-                    <p className="text-xs text-muted-foreground">No Sub</p>
+                    <p className="text-sm text-muted-foreground">
+                      No Subscription
+                    </p>
                   </CardContent>
                 </Card>
-                <Card>
-                  <CardContent className="p-4 text-center">
-                    <XCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold">{syncResults.failed}</p>
-                    <p className="text-xs text-muted-foreground">Failed</p>
+                <Card className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
+                  <CardContent className="p-5 text-center">
+                    <XCircle className="h-10 w-10 text-red-600 mx-auto mb-2" />
+                    <p className="text-3xl font-bold">{syncResults.failed}</p>
+                    <p className="text-sm text-muted-foreground">Failed</p>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Details */}
               {syncResults.details.length > 0 && (
                 <div>
-                  <h4 className="font-medium mb-2">Details</h4>
-                  <ScrollArea className="h-48 border rounded-lg">
-                    <div className="p-2 space-y-1">
+                  <h4 className="font-medium mb-3">Details</h4>
+                  <ScrollArea className="h-64 rounded-md border">
+                    <div className="p-3 space-y-2">
                       {syncResults.details.map((detail, idx) => {
-                        const statusConfig =
+                        const cfg =
                           subscriptionStatusConfig[detail.status] ||
                           subscriptionStatusConfig.no_subscription;
+                        const Icon = cfg.icon;
                         return (
                           <div
                             key={idx}
-                            className="flex items-center justify-between p-2 rounded hover:bg-muted/50"
+                            className="flex items-center justify-between py-2 px-3 rounded hover:bg-muted/60 text-sm"
                           >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <code className="text-xs bg-muted px-1 rounded truncate max-w-30">
-                                {detail.userId.slice(0, 8)}...
+                            <div className="flex items-center gap-3 min-w-0">
+                              <code className="text-xs bg-muted px-2 py-1 rounded">
+                                {detail.userId.slice(0, 8)}…
                               </code>
                               {detail.planName && (
-                                <span className="text-xs text-muted-foreground truncate">
+                                <span className="text-muted-foreground truncate">
                                   {detail.planName}
                                 </span>
                               )}
                             </div>
-                            <Badge
-                              variant={statusConfig.variant}
-                              className="text-xs shrink-0"
-                            >
-                              {statusConfig.label}
+                            <Badge variant={cfg.variant} className="shrink-0">
+                              <Icon className="h-3.5 w-3.5 mr-1" />
+                              {cfg.label}
                             </Badge>
                           </div>
                         );
@@ -1851,6 +1996,207 @@ export default function SubscriptionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* B2B Plan Create/Edit Dialog */}
+      <Dialog open={isB2BPlanDialogOpen} onOpenChange={setIsB2BPlanDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingB2BPlan ? "Edit B2B Plan" : "Create B2B Plan"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingB2BPlan
+                ? "Update details for this business subscription tier."
+                : "Define a new subscription plan for company customers."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-6 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="plan-name">Plan Name *</Label>
+                <Input
+                  id="plan-name"
+                  value={b2bPlanForm.name}
+                  onChange={(e) =>
+                    setB2bPlanForm({ ...b2bPlanForm, name: e.target.value })
+                  }
+                  placeholder="e.g. Enterprise"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="price">Price (USD) *</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={b2bPlanForm.price || ""}
+                  onChange={(e) =>
+                    setB2bPlanForm({
+                      ...b2bPlanForm,
+                      price: e.target.value === "" ? 0 : Number(e.target.value),
+                    })
+                  }
+                  placeholder="299"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="billing-cycle">Billing Cycle</Label>
+                <Select
+                  value={b2bPlanForm.billingCycle}
+                  onValueChange={(value: "monthly" | "yearly") =>
+                    setB2bPlanForm({ ...b2bPlanForm, billingCycle: value })
+                  }
+                >
+                  <SelectTrigger id="billing-cycle">
+                    <SelectValue placeholder="Select cycle" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="yearly">Yearly</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Maximum Users</Label>
+                <div className="flex items-center gap-4">
+                  <Input
+                    type="number"
+                    min="1"
+                    value={
+                      b2bPlanForm.maxUsers === -1 ? "" : b2bPlanForm.maxUsers
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setB2bPlanForm({
+                        ...b2bPlanForm,
+                        maxUsers: val === "" ? -1 : Number(val),
+                      });
+                    }}
+                    className="max-w-40"
+                    placeholder="50"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="unlimited-users"
+                      checked={b2bPlanForm.maxUsers === -1}
+                      onCheckedChange={(checked) =>
+                        setB2bPlanForm({
+                          ...b2bPlanForm,
+                          maxUsers: checked ? -1 : 10,
+                        })
+                      }
+                    />
+                    <Label
+                      htmlFor="unlimited-users"
+                      className="cursor-pointer text-sm"
+                    >
+                      Unlimited
+                    </Label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={b2bPlanForm.description}
+                onChange={(e) =>
+                  setB2bPlanForm({
+                    ...b2bPlanForm,
+                    description: e.target.value,
+                  })
+                }
+                placeholder="Best value for growing teams — includes priority support, SSO, custom branding…"
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Features (one per line)</Label>
+              <Textarea
+                value={b2bFeaturesInput}
+                onChange={(e) => setB2bFeaturesInput(e.target.value)}
+                placeholder="• Unlimited seats&#10;• Priority support 24/7&#10;• Custom branding&#10;• Advanced analytics"
+                rows={6}
+                className="font-mono text-sm leading-relaxed"
+              />
+              <p className="text-xs text-muted-foreground">
+                Lines will be cleaned automatically — bullet points optional
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="is-active"
+                checked={b2bPlanForm.isActive}
+                onCheckedChange={(checked) =>
+                  setB2bPlanForm({ ...b2bPlanForm, isActive: checked })
+                }
+              />
+              <Label htmlFor="is-active" className="cursor-pointer">
+                Plan is active and visible to companies
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsB2BPlanDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveB2BPlan} disabled={savingB2BPlan}>
+              {savingB2BPlan ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : editingB2BPlan ? (
+                "Update Plan"
+              ) : (
+                "Create Plan"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog
+        open={!!deletingB2BPlan}
+        onOpenChange={() => setDeletingB2BPlan(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this plan?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. Companies currently subscribed to
+              &quot;
+              {deletingB2BPlan?.name}&quot; will need to be reassigned to
+              another plan manually.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteB2BPlan}
+            >
+              Delete Plan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
