@@ -125,7 +125,7 @@ export async function GET(
     const response = {
       profile: { id: userDoc.id, ...userDoc.data() },
       personalDetails: personalDetails.exists ? personalDetails.data() : null,
-      insurance: insurance.docs.map((d) => ({ id: d.id, ...d.data() })), // FIXED: Map like other collections
+      insurance: insurance.docs.map((d) => ({ id: d.id, ...d.data() })),
       preferences: preferences.exists ? preferences.data() : null,
       medicines: medicines.docs.map((d) => ({ id: d.id, ...d.data() })),
       medicalReports: reports.docs.map((d) => ({ id: d.id, ...d.data() })),
@@ -133,6 +133,7 @@ export async function GET(
       doctors: doctors.docs.map((d) => ({ id: d.id, ...d.data() })),
       pharmacies: pharmacies.docs.map((d) => ({ id: d.id, ...d.data() })),
       personalContacts: contacts.docs.map((d) => ({ id: d.id, ...d.data() })),
+      subscription: userDoc.data()?.subscription || null,
     };
 
     console.log("✅ User details fetched successfully");

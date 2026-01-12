@@ -3,6 +3,32 @@ import { stripe } from "@/lib/stripe";
 import { db } from "@/lib/firebaseAdmin.mjs";
 import { requireAdmin } from "@/lib/authAdmin";
 import { NextRequest, NextResponse } from "next/server";
+import Stripe from "stripe";
+
+// Helper to remove undefined values from object
+function removeUndefined<T extends Record<string, unknown>>(
+  obj: T
+): Partial<T> {
+  const cleaned: Partial<T> = {};
+  for (const key in obj) {
+    if (obj[key] !== undefined) {
+      cleaned[key] = obj[key];
+    }
+  }
+  return cleaned;
+}
+
+// Helper to safely extract subscription properties (for newer Stripe API versions)
+function getSubscriptionData(subscription: Stripe.Subscription) {
+  const subAny = subscription as unknown as Record<string, unknown>;
+  return {
+    currentPeriodStart: subAny["current_period_start"] as number | undefined,
+    currentPeriodEnd: subAny["current_period_end"] as number | undefined,
+    cancelAtPeriodEnd: subAny["cancel_at_period_end"] as boolean | undefined,
+    canceledAt: subAny["canceled_at"] as number | null | undefined,
+    created: subAny["created"] as number | undefined,
+  };
+}
 
 // POST - Sync a specific user's subscription from Stripe
 export async function POST(request: NextRequest) {
@@ -65,67 +91,108 @@ export async function POST(request: NextRequest) {
     console.log("Stripe customer ID:", customerId);
 
     // Fetch subscriptions from Stripe
-    const subscriptions = await stripe.subscriptions.list({
-      customer: customerId,
-      limit: 1,
-      status: "all",
-    });
+    let subscriptions;
+    try {
+      subscriptions = await stripe.subscriptions.list({
+        customer: customerId,
+        limit: 1,
+        status: "all",
+      });
+    } catch (stripeError) {
+      const errorMessage =
+        stripeError instanceof Error
+          ? stripeError.message
+          : String(stripeError);
+      console.error("Stripe API error:", errorMessage);
+      return NextResponse.json(
+        { error: "Failed to fetch from Stripe", details: errorMessage },
+        { status: 500 }
+      );
+    }
 
     if (subscriptions.data.length === 0) {
       // No subscription found - update status
+      const noSubData = removeUndefined({
+        stripeCustomerId: customerId,
+        subscriptionId: null,
+        priceId: null,
+        productId: null,
+        planName: null,
+        status: "no_subscription",
+        currentPeriodStart: null,
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+        canceledAt: null,
+        updatedAt: Date.now(),
+      });
+
       await db.collection("users").doc(targetUserId).update({
-        "subscription.status": "no_subscription",
-        "subscription.updatedAt": Date.now(),
+        subscription: noSubData,
       });
 
       return NextResponse.json({
         success: true,
         userId: targetUserId,
         message: "No active subscription found in Stripe",
-        subscription: { status: "no_subscription" },
+        subscription: noSubData,
       });
     }
 
     const subscription = subscriptions.data[0];
-    console.log("Found subscription:", subscription.id, subscription.status);
+    console.log("Found subscription:", subscription.id);
+    console.log("Subscription status:", subscription.status);
+
+    // Get price and product info safely
+    const priceItem = subscription.items.data[0];
+    const priceData = priceItem?.price;
+    const priceId = priceData?.id || null;
+
+    // Product can be a string ID or expanded object
+    let productId: string | null = null;
+    if (typeof priceData?.product === "string") {
+      productId = priceData.product;
+    } else if (priceData?.product && typeof priceData.product === "object") {
+      productId = (priceData.product as Stripe.Product).id;
+    }
+
+    console.log("Price ID:", priceId);
+    console.log("Product ID:", productId);
 
     // Get product name
-    const priceData = subscription.items.data[0]?.price;
-    const productId =
-      typeof priceData?.product === "string"
-        ? priceData.product
-        : priceData?.product?.id;
-
     let planName = "Unknown Plan";
-    if (
-      typeof priceData?.product === "object" &&
-      (priceData.product as any)?.name
-    ) {
-      planName = (priceData.product as any).name;
-    } else if (productId) {
+    if (productId) {
       try {
         const product = await stripe.products.retrieve(productId);
-        planName = (product as any).name || "Unknown Plan";
+        planName = product.name;
+        console.log("Plan name:", planName);
       } catch (e) {
         console.error("Error fetching product:", e);
       }
     }
 
-    // Build subscription data
-    const subscriptionData = {
+    // Extract subscription properties safely
+    const subData = getSubscriptionData(subscription);
+
+    // Build subscription data - ensure no undefined values
+    const subscriptionData = removeUndefined({
       stripeCustomerId: customerId,
       subscriptionId: subscription.id,
-      priceId: priceData?.id,
+      priceId: priceId,
       productId: productId,
       planName: planName,
       status: subscription.status,
-      currentPeriodStart: (subscription as any).current_period_start,
-      currentPeriodEnd: (subscription as any).current_period_end,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      canceledAt: subscription.canceled_at || null,
-      createdAt: subscription.created * 1000,
+      currentPeriodStart: subData.currentPeriodStart ?? null,
+      currentPeriodEnd: subData.currentPeriodEnd ?? null,
+      cancelAtPeriodEnd: subData.cancelAtPeriodEnd ?? false,
+      canceledAt: subData.canceledAt ?? null,
+      createdAt: subData.created ? subData.created * 1000 : Date.now(),
       updatedAt: Date.now(),
-    };
+    });
+
+    console.log(
+      "Subscription data to save:",
+      JSON.stringify(subscriptionData, null, 2)
+    );
 
     // Update Firebase
     await db.collection("users").doc(targetUserId).update({
@@ -140,11 +207,12 @@ export async function POST(request: NextRequest) {
       subscription: subscriptionData,
     });
   } catch (error) {
-    console.error("Error syncing subscription:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error syncing subscription:", errorMessage);
     return NextResponse.json(
       {
         error: "Failed to sync subscription",
-        details: (error as Error).message,
+        details: errorMessage,
       },
       { status: 500 }
     );
@@ -208,47 +276,72 @@ export async function PUT(request: NextRequest) {
           });
 
           // Update user to reflect no subscription
-          await db.collection("users").doc(userDoc.id).update({
-            "subscription.status": "no_subscription",
-            "subscription.subscriptionId": null,
-            "subscription.updatedAt": Date.now(),
-          });
+          await db
+            .collection("users")
+            .doc(userDoc.id)
+            .update({
+              subscription: removeUndefined({
+                stripeCustomerId: customerId,
+                subscriptionId: null,
+                status: "no_subscription",
+                updatedAt: Date.now(),
+              }),
+            });
           continue;
         }
 
         const subscription = subscriptions.data[0];
 
-        // Get product name
-        const productId = subscription.items.data[0]?.price.product as string;
-        let planName = "Unknown Plan";
-        try {
-          const product = await stripe.products.retrieve(productId);
-          planName = (product as any).name || "Unknown Plan";
-        } catch (e) {
-          // Ignore
-          console.log(e);
+        // Get price and product info safely
+        const priceItem = subscription.items.data[0];
+        const priceData = priceItem?.price;
+        const priceId = priceData?.id || null;
+
+        let productId: string | null = null;
+        if (typeof priceData?.product === "string") {
+          productId = priceData.product;
+        } else if (
+          priceData?.product &&
+          typeof priceData.product === "object"
+        ) {
+          productId = (priceData.product as Stripe.Product).id;
         }
 
+        // Get product name
+        let planName = "Unknown Plan";
+        if (productId) {
+          try {
+            const product = await stripe.products.retrieve(productId);
+            planName = product.name;
+          } catch (e) {
+            // Ignore
+            console.log(e);
+          }
+        }
+
+        // Extract subscription properties safely
+        const subData = getSubscriptionData(subscription);
+
+        // Build subscription data
+        const subscriptionData = removeUndefined({
+          stripeCustomerId: customerId,
+          subscriptionId: subscription.id,
+          priceId: priceId,
+          productId: productId,
+          planName: planName,
+          status: subscription.status,
+          currentPeriodStart: subData.currentPeriodStart ?? null,
+          currentPeriodEnd: subData.currentPeriodEnd ?? null,
+          cancelAtPeriodEnd: subData.cancelAtPeriodEnd ?? false,
+          canceledAt: subData.canceledAt ?? null,
+          createdAt: subData.created ? subData.created * 1000 : Date.now(),
+          updatedAt: Date.now(),
+        });
+
         // Update Firebase
-        await db
-          .collection("users")
-          .doc(userDoc.id)
-          .update({
-            subscription: {
-              stripeCustomerId: customerId,
-              subscriptionId: subscription.id,
-              priceId: subscription.items.data[0]?.price.id,
-              productId: productId,
-              planName: planName,
-              status: subscription.status,
-              currentPeriodStart: (subscription as any).current_period_start,
-              currentPeriodEnd: (subscription as any).current_period_end,
-              cancelAtPeriodEnd: subscription.cancel_at_period_end,
-              canceledAt: subscription.canceled_at || null,
-              createdAt: subscription.created * 1000,
-              updatedAt: Date.now(),
-            },
-          });
+        await db.collection("users").doc(userDoc.id).update({
+          subscription: subscriptionData,
+        });
 
         results.synced++;
         results.details.push({
@@ -256,15 +349,19 @@ export async function PUT(request: NextRequest) {
           status: subscription.status,
           planName: planName,
         });
-        console.log(`✅ Synced user ${userDoc.id} - ${subscription.status}`);
+        console.log(
+          `✅ Synced user ${userDoc.id} - ${subscription.status} - ${planName}`
+        );
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         results.failed++;
         results.details.push({
           userId: userDoc.id,
           status: "error",
-          error: (error as Error).message,
+          error: errorMessage,
         });
-        console.error(`❌ Failed to sync user ${userDoc.id}:`, error);
+        console.error(`❌ Failed to sync user ${userDoc.id}:`, errorMessage);
       }
 
       // Add small delay to avoid rate limiting
@@ -282,9 +379,10 @@ export async function PUT(request: NextRequest) {
       ...results,
     });
   } catch (error) {
-    console.error("Error in bulk sync:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error in bulk sync:", errorMessage);
     return NextResponse.json(
-      { error: "Failed to sync subscriptions" },
+      { error: "Failed to sync subscriptions", details: errorMessage },
       { status: 500 }
     );
   }

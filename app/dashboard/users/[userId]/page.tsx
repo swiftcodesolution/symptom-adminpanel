@@ -30,6 +30,10 @@ import {
   Ruler,
   Bell,
   Star,
+  CreditCard,
+  ExternalLink,
+  RotateCcw,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -160,17 +164,33 @@ interface UserPreferences {
   medicationNotifications?: boolean;
 }
 
+interface UserSubscription {
+  stripeCustomerId?: string;
+  subscriptionId?: string;
+  priceId?: string;
+  productId?: string;
+  planName?: string;
+  status?: string;
+  currentPeriodStart?: number;
+  currentPeriodEnd?: number;
+  cancelAtPeriodEnd?: boolean;
+  canceledAt?: number;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
 interface UserData {
   profile: UserProfile;
   personalDetails: Record<string, unknown> | null;
-  insurance: Insurance[];
+  insurance: Insurance[] | null;
   preferences: UserPreferences | null;
-  medicines: Medicine[];
-  medicalReports: MedicalReport[];
-  emergencyContacts: EmergencyContact[];
-  doctors: Doctor[];
-  pharmacies: Pharmacy[];
-  personalContacts: PersonalContact[];
+  medicines: Medicine[] | null;
+  medicalReports: MedicalReport[] | null;
+  emergencyContacts: EmergencyContact[] | null;
+  doctors: Doctor[] | null;
+  pharmacies: Pharmacy[] | null;
+  personalContacts: PersonalContact[] | null;
+  subscription?: UserSubscription | null;
 }
 
 const container = {
@@ -252,6 +272,69 @@ function isExpiringSoon(expiryDate: string | undefined): boolean {
   return diffDays > 0 && diffDays <= 30;
 }
 
+const subscriptionStatusConfig: Record<
+  string,
+  {
+    label: string;
+    variant: "default" | "secondary" | "destructive" | "outline";
+    color: string;
+    bgColor: string;
+  }
+> = {
+  active: {
+    label: "Active",
+    variant: "default",
+    color: "text-green-600",
+    bgColor: "bg-green-500/10",
+  },
+  trialing: {
+    label: "Trial",
+    variant: "outline",
+    color: "text-blue-600",
+    bgColor: "bg-blue-500/10",
+  },
+  past_due: {
+    label: "Past Due",
+    variant: "destructive",
+    color: "text-red-600",
+    bgColor: "bg-red-500/10",
+  },
+  canceled: {
+    label: "Canceled",
+    variant: "secondary",
+    color: "text-gray-600",
+    bgColor: "bg-gray-500/10",
+  },
+  unpaid: {
+    label: "Unpaid",
+    variant: "destructive",
+    color: "text-red-600",
+    bgColor: "bg-red-500/10",
+  },
+  incomplete: {
+    label: "Incomplete",
+    variant: "outline",
+    color: "text-yellow-600",
+    bgColor: "bg-yellow-500/10",
+  },
+  no_subscription: {
+    label: "No Plan",
+    variant: "outline",
+    color: "text-gray-400",
+    bgColor: "bg-gray-500/10",
+  },
+};
+
+// Helper to format subscription date
+function formatSubscriptionDate(timestamp: number | undefined): string {
+  if (!timestamp) return "N/A";
+  return new Date(timestamp * 1000).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 // Loading skeleton component
 function LoadingSkeleton() {
   return (
@@ -283,6 +366,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
   const authFetch = useAuthFetch();
 
   const [userData, setUserData] = useState<UserData | null>(null);
+  const [syncingSubscription, setSyncingSubscription] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -315,6 +399,35 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
 
     fetchUserData();
   }, [userId, authFetch]);
+
+  const syncSubscription = async () => {
+    try {
+      setSyncingSubscription(true);
+      const response = await authFetch("/panel/api/admin/subscriptions/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to sync");
+      }
+
+      // Update local state
+      setUserData((prev) =>
+        prev ? { ...prev, subscription: data.subscription } : prev
+      );
+
+      // You can add a toast here if you have it set up
+      console.log("Subscription synced:", data.subscription);
+    } catch (error) {
+      console.error("Error syncing subscription:", error);
+    } finally {
+      setSyncingSubscription(false);
+    }
+  };
 
   if (loading) {
     return <LoadingSkeleton />;
@@ -353,6 +466,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
     personalContacts,
     medicalReports,
     preferences,
+    subscription,
   } = userData;
 
   // Extract health info from answers
@@ -411,36 +525,36 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
       title: "Medicines",
       href: `/dashboard/users/${userId}/medicines`,
       icon: Pill,
-      count: medicines.length,
+      count: medicines?.length,
       color: "text-purple-600 dark:text-purple-400",
       bgColor: "bg-purple-500/10",
-      description: `${medicines.length} active medications`,
+      description: `${medicines?.length} active medications`,
     },
     {
       title: "Insurance",
       href: `/dashboard/users/${userId}/medical-wallet`,
       icon: Shield,
-      count: insurance.length,
+      count: insurance?.length,
       color: "text-blue-600 dark:text-blue-400",
       bgColor: "bg-blue-500/10",
       description: `${
-        insurance.filter((i) => !isExpired(i.expiryDate)).length
+        insurance?.filter((i) => !isExpired(i.expiryDate)).length
       } active plans`,
     },
     {
       title: "Doctors",
       href: `/dashboard/users/${userId}/medical-wallet`,
       icon: Stethoscope,
-      count: doctors.length,
+      count: doctors?.length,
       color: "text-green-600 dark:text-green-400",
       bgColor: "bg-green-500/10",
-      description: `${doctors.filter((d) => d.isPrimary).length} primary`,
+      description: `${doctors?.filter((d) => d.isPrimary).length} primary`,
     },
     {
       title: "Pharmacies",
       href: `/dashboard/users/${userId}/medical-wallet`,
       icon: Building2,
-      count: pharmacies.length,
+      count: pharmacies?.length,
       color: "text-teal-600 dark:text-teal-400",
       bgColor: "bg-teal-500/10",
       description: "Saved pharmacies",
@@ -449,7 +563,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
       title: "Emergency Contacts",
       href: `/dashboard/users/${userId}/medical-wallet`,
       icon: AlertTriangle,
-      count: emergencyContacts.length,
+      count: emergencyContacts?.length,
       color: "text-red-600 dark:text-red-400",
       bgColor: "bg-red-500/10",
       description: "Emergency contacts",
@@ -458,7 +572,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
       title: "Personal Contacts",
       href: `/dashboard/users/${userId}/medical-wallet`,
       icon: Users,
-      count: personalContacts.length,
+      count: personalContacts?.length,
       color: "text-orange-600 dark:text-orange-400",
       bgColor: "bg-orange-500/10",
       description: "Personal contacts",
@@ -467,7 +581,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
       title: "Medical Reports",
       href: `/dashboard/users/${userId}/reports`,
       icon: FileText,
-      count: medicalReports.length,
+      count: medicalReports?.length,
       color: "text-indigo-600 dark:text-indigo-400",
       bgColor: "bg-indigo-500/10",
       description: "Uploaded reports",
@@ -489,7 +603,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
     { label: "Recreational Drugs", value: usesRecreationalDrugs, icon: Pill },
   ];
 
-  const expiringInsurance = insurance.filter((i) =>
+  const expiringInsurance = insurance?.filter((i) =>
     isExpiringSoon(i.expiryDate)
   );
 
@@ -659,6 +773,193 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
               </Card>
             </motion.div>
 
+            {/* Subscription Info */}
+            <motion.div variants={item}>
+              <Card
+                className={
+                  subscription?.status === "active"
+                    ? "border-green-500/30 bg-green-500/5"
+                    : subscription?.status === "past_due"
+                    ? "border-red-500/30 bg-red-500/5"
+                    : ""
+                }
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <CreditCard className="h-5 w-5" />
+                      Subscription
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={syncSubscription}
+                        disabled={syncingSubscription}
+                        title="Sync from Stripe"
+                      >
+                        {syncingSubscription ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-4 w-4" />
+                        )}
+                      </Button>
+                      {subscription?.subscriptionId && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            window.open(
+                              `https://dashboard.stripe.com/subscriptions/${subscription.subscriptionId}`,
+                              "_blank"
+                            )
+                          }
+                          title="View in Stripe"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {!subscription?.stripeCustomerId ? (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <CreditCard className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                      <p>No subscription data</p>
+                      <p className="text-xs mt-1">
+                        User has not started a subscription
+                      </p>
+                    </div>
+                  ) : !subscription?.subscriptionId ? (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <CreditCard className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                      <p>Customer created, no active subscription</p>
+                      <p className="text-xs mt-1">
+                        Customer ID:{" "}
+                        {subscription.stripeCustomerId.slice(0, 12)}...
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={syncSubscription}
+                        disabled={syncingSubscription}
+                      >
+                        {syncingSubscription ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-4 w-4 mr-2" />
+                        )}
+                        Sync from Stripe
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Plan & Status Row */}
+                      <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`h-12 w-12 rounded-xl flex items-center justify-center ${
+                              subscriptionStatusConfig[
+                                subscription.status || ""
+                              ]?.bgColor || "bg-gray-500/10"
+                            }`}
+                          >
+                            <CreditCard
+                              className={`h-6 w-6 ${
+                                subscriptionStatusConfig[
+                                  subscription.status || ""
+                                ]?.color || "text-gray-500"
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-lg">
+                              {subscription.planName || "Unknown Plan"}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {subscription.status === "active" &&
+                              subscription.cancelAtPeriodEnd
+                                ? "Cancels at period end"
+                                : subscription.status === "active"
+                                ? "Active subscription"
+                                : subscriptionStatusConfig[
+                                    subscription.status || ""
+                                  ]?.label || subscription.status}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge
+                          variant={
+                            subscriptionStatusConfig[subscription.status || ""]
+                              ?.variant || "outline"
+                          }
+                          className="h-8 px-3"
+                        >
+                          {subscription.cancelAtPeriodEnd &&
+                          subscription.status === "active"
+                            ? "Canceling"
+                            : subscriptionStatusConfig[
+                                subscription.status || ""
+                              ]?.label || subscription.status}
+                        </Badge>
+                      </div>
+
+                      {/* Billing Period */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="p-3 rounded-lg bg-muted/50">
+                          <p className="text-xs text-muted-foreground mb-1">
+                            Current Period Start
+                          </p>
+                          <p className="text-sm font-medium">
+                            {formatSubscriptionDate(
+                              subscription.currentPeriodStart
+                            )}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-muted/50">
+                          <p className="text-xs text-muted-foreground mb-1">
+                            Current Period End
+                          </p>
+                          <p className="text-sm font-medium">
+                            {formatSubscriptionDate(
+                              subscription.currentPeriodEnd
+                            )}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-muted/50">
+                          <p className="text-xs text-muted-foreground mb-1">
+                            Subscribed Since
+                          </p>
+                          <p className="text-sm font-medium">
+                            {subscription.createdAt
+                              ? new Date(
+                                  subscription.createdAt
+                                ).toLocaleDateString()
+                              : "N/A"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* IDs (collapsible or subtle) */}
+                      <div className="pt-3 border-t">
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          <span className="font-mono bg-muted px-2 py-1 rounded">
+                            sub: {subscription.subscriptionId?.slice(0, 14)}...
+                          </span>
+                          <span className="font-mono bg-muted px-2 py-1 rounded">
+                            cus: {subscription.stripeCustomerId?.slice(0, 14)}
+                            ...
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
             {/* Physical Stats */}
             <motion.div variants={item}>
               <Card>
@@ -702,7 +1003,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
             </motion.div>
 
             {/* Insurance Alert */}
-            {expiringInsurance.length > 0 && (
+            {(expiringInsurance?.length ?? 0) > 0 && (
               <motion.div variants={item}>
                 <Card className="border-yellow-500/50 bg-yellow-500/5">
                   <CardHeader className="pb-2">
@@ -713,7 +1014,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2">
-                      {expiringInsurance.map((ins) => (
+                      {expiringInsurance?.map((ins) => (
                         <Badge
                           key={ins.id}
                           variant="outline"
@@ -759,7 +1060,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
             </motion.div>
 
             {/* Recent Medicines */}
-            {medicines.length > 0 && (
+            {(medicines?.length ?? 0) > 0 && (
               <motion.div variants={item}>
                 <Card>
                   <CardHeader className="pb-3">
@@ -778,7 +1079,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      {medicines.slice(0, 3).map((medicine) => (
+                      {medicines?.slice(0, 3).map((medicine) => (
                         <div
                           key={medicine.id}
                           className="flex items-center gap-3 p-3 rounded-lg border"
@@ -807,7 +1108,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
             )}
 
             {/* Insurance Overview */}
-            {insurance.length > 0 && (
+            {(insurance?.length ?? 0) > 0 && (
               <motion.div variants={item}>
                 <Card>
                   <CardHeader className="pb-3">
@@ -828,7 +1129,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      {insurance.slice(0, 2).map((ins) => {
+                      {insurance?.slice(0, 2).map((ins) => {
                         const expired = isExpired(ins.expiryDate);
                         const expiringSoon = isExpiringSoon(ins.expiryDate);
 
@@ -1080,7 +1381,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Stethoscope className="h-5 w-5" />
-                      Doctors ({doctors.length})
+                      Doctors ({doctors?.length})
                     </CardTitle>
                     <Button variant="ghost" size="sm" asChild>
                       <Link href={`/dashboard/users/${userId}/medical-wallet`}>
@@ -1091,14 +1392,14 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {doctors.length === 0 ? (
+                  {doctors?.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">
                       No doctors added
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {doctors
-                        .sort((a, b) =>
+                        ?.sort((a, b) =>
                           a.isPrimary === b.isPrimary ? 0 : a.isPrimary ? -1 : 1
                         )
                         .map((doctor) => (
@@ -1176,7 +1477,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Building2 className="h-5 w-5" />
-                      Pharmacies ({pharmacies.length})
+                      Pharmacies ({pharmacies?.length})
                     </CardTitle>
                     <Button variant="ghost" size="sm" asChild>
                       <Link href={`/dashboard/users/${userId}/medical-wallet`}>
@@ -1187,13 +1488,13 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {pharmacies.length === 0 ? (
+                  {pharmacies?.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">
                       No pharmacies added
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {pharmacies.map((pharmacy) => (
+                      {pharmacies?.map((pharmacy) => (
                         <div
                           key={pharmacy.id}
                           className="p-4 rounded-lg border space-y-3"
@@ -1252,7 +1553,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg flex items-center gap-2">
                       <AlertTriangle className="h-5 w-5" />
-                      Emergency Contacts ({emergencyContacts.length})
+                      Emergency Contacts ({emergencyContacts?.length})
                     </CardTitle>
                     <Button variant="ghost" size="sm" asChild>
                       <Link href={`/dashboard/users/${userId}/medical-wallet`}>
@@ -1263,13 +1564,13 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {emergencyContacts.length === 0 ? (
+                  {emergencyContacts?.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">
                       No emergency contacts added
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {emergencyContacts.map((contact) => (
+                      {emergencyContacts?.map((contact) => (
                         <div
                           key={contact.id}
                           className="p-4 rounded-lg border bg-red-500/5 border-red-500/20 space-y-2"
@@ -1307,7 +1608,7 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Users className="h-5 w-5" />
-                      Personal Contacts ({personalContacts.length})
+                      Personal Contacts ({personalContacts?.length})
                     </CardTitle>
                     <Button variant="ghost" size="sm" asChild>
                       <Link href={`/dashboard/users/${userId}/medical-wallet`}>
@@ -1318,13 +1619,13 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {personalContacts.length === 0 ? (
+                  {personalContacts?.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">
                       No personal contacts added
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {personalContacts.map((contact) => (
+                      {personalContacts?.map((contact) => (
                         <div
                           key={contact.id}
                           className="p-4 rounded-lg border space-y-2"
@@ -1426,17 +1727,17 @@ export default function UserOverviewPage({ params }: UserOverviewProps) {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <FileText className="h-5 w-5" />
-                    Medical Reports ({medicalReports.length})
+                    Medical Reports ({medicalReports?.length})
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {medicalReports.length === 0 ? (
+                  {medicalReports?.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">
                       No medical reports uploaded
                     </p>
                   ) : (
                     <div className="space-y-3">
-                      {medicalReports.map((report) => (
+                      {medicalReports?.map((report) => (
                         <div
                           key={report.id}
                           className="flex items-center gap-3 p-3 rounded-lg border"
