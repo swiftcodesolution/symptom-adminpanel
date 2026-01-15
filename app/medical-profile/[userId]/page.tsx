@@ -151,6 +151,10 @@ const safePhoneFormat = (phone: string | undefined | null): string => {
   return phone.replace(/\D/g, "");
 };
 
+const safeArray = <T,>(arr: T[] | undefined | null): T[] => {
+  return Array.isArray(arr) ? arr : [];
+};
+
 // Helper function to extract data from answers array
 const getAnswerByQuestion = (
   answers: Answer[] | undefined | null,
@@ -213,14 +217,16 @@ const getConditions = (answers: Answer[] | undefined | null): string[] => {
 
 // Helper to get initials safely
 const getInitials = (name: string | undefined | null): string => {
-  if (!name) return "??";
+  if (!name || typeof name !== "string") return "??";
   return (
     name
+      .trim()
       .split(" ")
-      .map((n) => n?.[0] || "")
       .filter(Boolean)
+      .map((n) => n?.[0] || "")
       .join("")
-      .toUpperCase() || "??"
+      .toUpperCase()
+      .slice(0, 2) || "??"
   );
 };
 
@@ -266,12 +272,12 @@ export default function MedicalProfilePage({
   };
 
   const handleShare = async () => {
-    const userName = safeString(data?.user?.displayName, "User");
+    const shareUserName = safeString(data?.user?.displayName, "User");
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `Medical Profile - ${userName}`,
-          text: `View medical profile for ${userName}`,
+          title: `Medical Profile - ${shareUserName}`,
+          text: `View medical profile for ${shareUserName}`,
           url: window.location.href,
         });
       } catch (err) {
@@ -284,7 +290,7 @@ export default function MedicalProfilePage({
   };
 
   const generatePDF = async () => {
-    if (!data?.user) return;
+    if (!data) return;
 
     setIsGeneratingPdf(true);
 
@@ -302,18 +308,20 @@ export default function MedicalProfilePage({
       const textColor: [number, number, number] = [15, 23, 42];
       const lightBg: [number, number, number] = [248, 250, 252];
 
-      const userName = safeString(data.user?.displayName, "Unknown User");
-      const userDOB = getAnswerByQuestion(data.user?.answers, "date of birth");
-      const userHeight = getAnswerByQuestion(data.user?.answers, "height");
-      const userWeight = getAnswerByQuestion(data.user?.answers, "weight");
-      const allergies = getAllergies(data.user?.answers);
-      const conditions = getConditions(data.user?.answers);
+      const pdfUser = data?.user ?? {};
+      const pdfAnswers = safeArray(pdfUser?.answers);
+      const userName = safeString(pdfUser?.displayName, "Unknown User");
+      const userDOB = getAnswerByQuestion(pdfAnswers, "date of birth");
+      const userHeight = getAnswerByQuestion(pdfAnswers, "height");
+      const userWeight = getAnswerByQuestion(pdfAnswers, "weight");
+      const allergies = getAllergies(pdfAnswers);
+      const conditions = getConditions(pdfAnswers);
 
-      const userMedicines = data.medicines || [];
-      const userContacts = data.emergencyContacts || [];
-      const userDoctors = data.doctors || [];
-      const userPharmacies = data.pharmacies || [];
-      const userInsurance = data.insurance || [];
+      const userMedicines = safeArray(data?.medicines);
+      const userContacts = safeArray(data?.emergencyContacts);
+      const userDoctors = safeArray(data?.doctors);
+      const userPharmacies = safeArray(data?.pharmacies);
+      const userInsurance = safeArray(data?.insurance);
 
       // Helper functions
       const addNewPageIfNeeded = (requiredSpace: number) => {
@@ -413,7 +421,7 @@ export default function MedicalProfilePage({
       pdf.setTextColor(...secondaryColor);
       pdf.text("Phone:", margin + 70, yPos + 18);
       pdf.setTextColor(...textColor);
-      pdf.text(safeString(data.user?.phoneNumber), margin + 88, yPos + 18);
+      pdf.text(safeString(pdfUser?.phoneNumber), margin + 88, yPos + 18);
 
       // Row 2
       pdf.setTextColor(...secondaryColor);
@@ -429,7 +437,7 @@ export default function MedicalProfilePage({
       pdf.setTextColor(...secondaryColor);
       pdf.text("Email:", margin + 100, yPos + 26);
       pdf.setTextColor(...textColor);
-      pdf.text(safeString(data.user?.email), margin + 116, yPos + 26);
+      pdf.text(safeString(pdfUser?.email), margin + 116, yPos + 26);
 
       yPos += 42;
 
@@ -724,7 +732,7 @@ export default function MedicalProfilePage({
       );
       pdf.text(
         `Last Updated: ${formatDate(
-          data.user?.lastUpdated || new Date().toISOString()
+          pdfUser?.lastUpdated || new Date().toISOString()
         )}`,
         pageWidth - margin - 60,
         footerY + 4
@@ -779,25 +787,26 @@ export default function MedicalProfilePage({
   }
 
   // Extract data with defaults
-  const user = data.user;
-  const userName = safeString(user.displayName, "Unknown User");
-  const userInitials = getInitials(user.displayName);
+  const user = data?.user ?? {};
+  const userName = safeString(user?.displayName, "Unknown User");
+  const userInitials = getInitials(user?.displayName);
 
   // Extract info from answers array
-  const userDOB = getAnswerByQuestion(user.answers, "date of birth");
-  const userGender = getAnswerByQuestion(user.answers, "gender");
-  const userHeight = getAnswerByQuestion(user.answers, "height");
-  const userWeight = getAnswerByQuestion(user.answers, "weight");
+  const answers = safeArray(user?.answers);
+  const userDOB = getAnswerByQuestion(answers, "date of birth");
+  const userGender = getAnswerByQuestion(answers, "gender");
+  const userHeight = getAnswerByQuestion(answers, "height");
+  const userWeight = getAnswerByQuestion(answers, "weight");
 
-  const allergies = getAllergies(user.answers);
-  const conditions = getConditions(user.answers);
+  const allergies = getAllergies(answers);
+  const conditions = getConditions(answers);
 
-  const userMedicines = data.medicines || [];
-  const userContacts = data.emergencyContacts || [];
-  const userDoctors = data.doctors || [];
-  const userPharmacies = data.pharmacies || [];
-  const personalContacts = data.personalContacts || [];
-  const userInsurance = data.insurance || [];
+  const userMedicines = safeArray(data?.medicines);
+  const userContacts = safeArray(data?.emergencyContacts);
+  const userDoctors = safeArray(data?.doctors);
+  const userPharmacies = safeArray(data?.pharmacies);
+  const personalContacts = safeArray(data?.personalContacts);
+  const userInsurance = safeArray(data?.insurance);
 
   return (
     <div className="min-h-screen bg-linear-to-b from-primary/5 via-background to-background">
@@ -875,13 +884,13 @@ export default function MedicalProfilePage({
                         {userGender}
                       </Badge>
                     </div>
-                    {user.phoneNumber && (
+                    {user?.phoneNumber && (
                       <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Phone className="h-3 w-3" />
                           {user.phoneNumber}
                         </span>
-                        {user.email && (
+                        {user?.email && (
                           <span className="flex items-center gap-1">
                             <Mail className="h-3 w-3" />
                             {user.email}
@@ -889,7 +898,7 @@ export default function MedicalProfilePage({
                         )}
                       </div>
                     )}
-                    {user.address && (
+                    {user?.address && (
                       <div className="flex items-center gap-1 mt-1 text-sm text-muted-foreground">
                         <MapPin className="h-3 w-3" />
                         {user.address}
@@ -1248,9 +1257,12 @@ export default function MedicalProfilePage({
                       <div className="space-y-3">
                         {userMedicines.map((med, index) => {
                           if (!med) return null;
-                          const timeToTake = safeString(med.timeToTake, "");
+                          const timeToTake = safeString(med?.timeToTake, "");
                           const times = timeToTake
-                            ? timeToTake.split(",").filter(Boolean)
+                            ? String(timeToTake)
+                                .split(",")
+                                .map((t) => t.trim())
+                                .filter(Boolean)
                             : [];
                           return (
                             <div
@@ -1607,7 +1619,7 @@ export default function MedicalProfilePage({
                       <p className="text-xs text-muted-foreground">
                         Last updated:{" "}
                         {formatDate(
-                          user.lastUpdated || new Date().toISOString()
+                          user?.lastUpdated || new Date().toISOString()
                         )}
                       </p>
                     </div>
